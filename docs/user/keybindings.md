@@ -143,8 +143,10 @@ a shortcut.
 
 ## Commands with special behavior
 
-`thread.stop` interrupts the running turn in the focused thread. It has no default
-shortcut; assign one in **Settings → Keybindings**.
+`thread.stop` interrupts the running turn in the focused thread. By default it is
+bound to **Escape** while the composer is focused and a turn is running. Escape still
+closes menus, dialogs, and the composer's slash or mention picker first. Rebind it in
+**Settings → Keybindings**.
 
 `thread.undo` (`mod+z` by default) reverses the actions shown in the notice at the
 bottom of the sidebar, such as unpin, settle, snooze, archive, or discarding a

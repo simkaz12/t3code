@@ -67,6 +67,7 @@ import {
   isTerminalSplitShortcut,
   isTerminalSplitVerticalShortcut,
   isTerminalToggleShortcut,
+  isQuickTerminalToggleShortcut,
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
@@ -271,6 +272,16 @@ function readThemeColor(styles: CSSStyleDeclaration, variable: string, fallback:
   return normalizeComputedColor(styles.getPropertyValue(variable), fallback);
 }
 
+function terminalPaletteFromTheme(
+  styles: CSSStyleDeclaration,
+  defaults: ReadonlyArray<GhosttyColor>,
+): GhosttyColor[] {
+  return defaults.map((fallback, index) => {
+    const value = styles.getPropertyValue(`--terminal-ansi-${index}`).trim();
+    return value.length > 0 ? parseTerminalColor(value, fallback) : fallback;
+  });
+}
+
 function terminalFontOptions(family: string, size: number): { family?: string; size: number } {
   const trimmed = family.trim();
   return trimmed.length > 0 ? { family: trimmed, size } : { size };
@@ -335,7 +346,7 @@ export function terminalThemeFromApp(mountElement?: HTMLElement | null): Ghostty
       terminalCursor,
       isDark ? { r: 180, g: 203, b: 255 } : { r: 38, g: 56, b: 78 },
     ),
-    palette: TERMINAL_PALETTES[isDark ? "dark" : "light"],
+    palette: terminalPaletteFromTheme(themeStyles, TERMINAL_PALETTES[isDark ? "dark" : "light"]),
     selectionBackground: terminalSelection,
   };
 }
@@ -905,6 +916,7 @@ function TerminalSessionViewport({
         }
         if (
           isTerminalToggleShortcut(event, currentKeybindings, options) ||
+          isQuickTerminalToggleShortcut(event, currentKeybindings, options) ||
           isTerminalSplitShortcut(event, currentKeybindings, options) ||
           isTerminalSplitVerticalShortcut(event, currentKeybindings, options) ||
           isTerminalNewShortcut(event, currentKeybindings, options) ||
@@ -1026,7 +1038,7 @@ function TerminalSessionViewport({
       });
       themeObserver.observe(document.documentElement, {
         attributes: true,
-        attributeFilter: ["class", "style"],
+        attributeFilter: ["class", "style", "data-theme-id"],
       });
       setupCleanups.push(() => themeObserver.disconnect());
 

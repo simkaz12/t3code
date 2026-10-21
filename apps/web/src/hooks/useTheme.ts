@@ -297,7 +297,6 @@ export function syncBrowserChromeTheme() {
   if (!backgroundColor) return;
 
   document.documentElement.style.backgroundColor = backgroundColor;
-  document.body.style.backgroundColor = backgroundColor;
   const themeColorMetas = document.querySelectorAll<HTMLMetaElement>(
     `meta[name="${THEME_COLOR_META_NAME}"]`,
   );

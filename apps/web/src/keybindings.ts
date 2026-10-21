@@ -319,6 +319,14 @@ export function isTerminalToggleShortcut(
   return matchesCommandShortcut(event, keybindings, "terminal.toggle", options);
 }
 
+export function isQuickTerminalToggleShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return matchesCommandShortcut(event, keybindings, "terminal.quickToggle", options);
+}
+
 export function isTerminalSplitShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,

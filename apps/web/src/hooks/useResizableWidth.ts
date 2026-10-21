@@ -34,6 +34,7 @@ export interface ResizableWidthHandlers {
 export function useResizableWidth(options: UseResizableWidthOptions): {
   readonly width: number;
   readonly handlers: ResizableWidthHandlers;
+  readonly setWidth: (width: number) => void;
 } {
   const { storageKey, defaultWidth, minWidth, maxWidth, edge } = options;
 
@@ -98,5 +99,15 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   // rewrites the committed width, so re-apply the live pointer position.
   useLayoutEffect(refresh, [clamp, clampedWidth, refresh]);
 
-  return { width: clampedWidth, handlers };
+  const setWidth = (width: number) => {
+    const nextWidth = clamp(width);
+    setWidthState({ storageKey, width: nextWidth });
+    try {
+      setLocalStorageItem(storageKey, nextWidth, WidthSchema);
+    } catch (error) {
+      console.error("Could not persist panel width.", error);
+    }
+  };
+
+  return { width: clampedWidth, handlers, setWidth };
 }

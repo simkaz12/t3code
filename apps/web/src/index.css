@@ -1089,6 +1089,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   background-size: var(--surface-grain-size);
 }
 
+@utility surface-clip {
+  clip-path: var(--surface-clip, none);
+}
+
 /* Suppress all transitions during theme changes */
 .no-transitions,
 .no-transitions *,
@@ -1393,6 +1397,10 @@ html[data-theme-token-probe] *::after {
   line-height: 1rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+html[data-theme-id="city-783"] #theme-inspector-hover [data-theme-inspector-hover-label] {
+  border-radius: 0;
 }
 
 #theme-inspector-hover[data-placement="above"] [data-theme-inspector-hover-label] {
@@ -1707,6 +1715,740 @@ html[data-theme-id="t3-chat"] {
   --surface-grain-size: 128px 128px;
 }
 
+html[data-theme-id="city-783"] {
+  --radius: 0px;
+  --control-radius: 0px;
+  --font-sans: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, monospace;
+  --surface-clip: polygon(
+    6px 0,
+    calc(100% - 6px) 0,
+    100% 6px,
+    100% calc(100% - 6px),
+    calc(100% - 6px) 100%,
+    6px 100%,
+    0 calc(100% - 6px),
+    0 6px
+  );
+  --surface-grain: none;
+  --terminal-ansi-0: #181a1f;
+  --terminal-ansi-1: #e53939;
+  --terminal-ansi-2: #dce0e6;
+  --terminal-ansi-3: #9e1a1a;
+  --terminal-ansi-4: #ad2222;
+  --terminal-ansi-5: #c3c8d0;
+  --terminal-ansi-6: #8f949c;
+  --terminal-ansi-7: #b9bec6;
+  --terminal-ansi-8: #4b515b;
+  --terminal-ansi-9: #ff5c5c;
+  --terminal-ansi-10: #eceff2;
+  --terminal-ansi-11: #f04a4a;
+  --terminal-ansi-12: #dce0e6;
+  --terminal-ansi-13: #f5f7f9;
+  --terminal-ansi-14: #aab0b9;
+  --terminal-ansi-15: #eceff2;
+}
+
+html[data-theme-id="city-783"] body {
+  background-color: transparent;
+}
+
+html[data-theme-id="city-783"] :is(.dropdown-glass, .dialog-glass, .surface-clip) {
+  box-shadow: none;
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    [data-slot="sidebar-inner"],
+    [data-slot="sidebar-inset"],
+    [data-slot="sidebar-inset"] > .bg-background,
+    [data-slot="sidebar-inset"] .bg-background:has(> [data-chat-column]),
+    [data-slot="sidebar-inset"] .bg-background:has(> header.bg-background:first-child),
+    [data-slot="sidebar-inset"]
+      .bg-background:has(> header.bg-background:first-child)
+      > header.bg-background,
+    [data-chat-header],
+    [data-chat-canvas] > .bg-background,
+    [data-timeline-loading]
+  ) {
+  background-color: transparent;
+  background-image: none;
+}
+
+html[data-theme-id="city-783"] [data-slot="composer-shell"] {
+  --glass-opacity: 100%;
+  --glass-blur: 0px;
+}
+
+html[data-theme-id="city-783"] :where(*:not(.rounded-full)),
+html[data-theme-id="city-783"] :where(*:not([class*="before:rounded-full"]))::before,
+html[data-theme-id="city-783"]
+  :where(:not([class*="*:after:rounded-full"]) > *:not([class*="after:rounded-full"]))::after {
+  border-radius: 0;
+}
+
+html[data-theme-id="city-783"] {
+  --city-edge-gradient: linear-gradient(35deg, #ad2222 0 40%, #eceff2 50%, #ad2222 60% 100%);
+}
+
+html[data-theme-id="city-783"]
+  :where(
+    .city-edge,
+    [data-slot="composer-host"],
+    [data-thread-details-card],
+    [data-preview-panel-mode="inline"],
+    [data-diff-panel-mode="inline"],
+    [data-sidebar-row="card"],
+    [data-theme-library-card],
+    .surface-clip.relative
+  ) {
+  --edge-w: 1px;
+  --edge-paint: color-mix(in srgb, #b9bec6 40%, #181a1f);
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    .city-edge,
+    [data-slot="composer-host"],
+    [data-thread-details-card],
+    [data-preview-panel-mode="inline"],
+    [data-diff-panel-mode="inline"],
+    [data-sidebar-row="card"],
+    [data-theme-library-card],
+    .surface-clip.relative
+  ) {
+  --edge-cut-in: max(0px, calc(var(--edge-cut, 6px) - var(--edge-w, 1px) * 0.586));
+  --edge-outer: polygon(
+    var(--edge-cut, 6px) 0,
+    calc(100% - var(--edge-cut, 6px)) 0,
+    100% var(--edge-cut, 6px),
+    100% calc(100% - var(--edge-cut, 6px)),
+    calc(100% - var(--edge-cut, 6px)) 100%,
+    var(--edge-cut, 6px) 100%,
+    0 calc(100% - var(--edge-cut, 6px)),
+    0 var(--edge-cut, 6px)
+  );
+  --edge-ring: polygon(
+    evenodd,
+    var(--edge-cut, 6px) 0,
+    calc(100% - var(--edge-cut, 6px)) 0,
+    100% var(--edge-cut, 6px),
+    100% calc(100% - var(--edge-cut, 6px)),
+    calc(100% - var(--edge-cut, 6px)) 100%,
+    var(--edge-cut, 6px) 100%,
+    0 calc(100% - var(--edge-cut, 6px)),
+    0 var(--edge-cut, 6px),
+    var(--edge-cut, 6px) 0,
+    calc(var(--edge-w, 1px) + var(--edge-cut-in)) var(--edge-w, 1px),
+    calc(100% - var(--edge-w, 1px) - var(--edge-cut-in)) var(--edge-w, 1px),
+    calc(100% - var(--edge-w, 1px)) calc(var(--edge-w, 1px) + var(--edge-cut-in)),
+    calc(100% - var(--edge-w, 1px)) calc(100% - var(--edge-w, 1px) - var(--edge-cut-in)),
+    calc(100% - var(--edge-w, 1px) - var(--edge-cut-in)) calc(100% - var(--edge-w, 1px)),
+    calc(var(--edge-w, 1px) + var(--edge-cut-in)) calc(100% - var(--edge-w, 1px)),
+    var(--edge-w, 1px) calc(100% - var(--edge-w, 1px) - var(--edge-cut-in)),
+    var(--edge-w, 1px) calc(var(--edge-w, 1px) + var(--edge-cut-in)),
+    calc(var(--edge-w, 1px) + var(--edge-cut-in)) var(--edge-w, 1px)
+  );
+  border-width: 0;
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    .city-edge,
+    [data-slot="composer-host"],
+    [data-thread-details-card],
+    [data-preview-panel-mode="inline"],
+    [data-diff-panel-mode="inline"],
+    [data-sidebar-row="card"],
+    [data-theme-library-card]
+  ) {
+  position: relative;
+  clip-path: var(--edge-outer);
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    .city-edge,
+    [data-slot="composer-host"],
+    [data-thread-details-card],
+    [data-preview-panel-mode="inline"],
+    [data-diff-panel-mode="inline"],
+    [data-sidebar-row="card"],
+    [data-theme-library-card],
+    .surface-clip.relative
+  )::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  pointer-events: none;
+  border: 0;
+  box-shadow: none;
+  background: var(--edge-paint, color-mix(in srgb, #b9bec6 40%, #181a1f));
+  clip-path: var(--edge-ring);
+}
+
+@media (max-width: 39.999rem) {
+  html[data-theme-id="city-783"] .dialog-glass.surface-clip::after {
+    display: none;
+  }
+}
+
+@media (min-width: 40rem) {
+  html[data-theme-id="city-783"] .dialog-glass.surface-clip {
+    --edge-w: 3px;
+    --edge-paint: var(--city-edge-gradient);
+  }
+}
+
+html[data-theme-id="city-783"] [data-slot="composer-host"] {
+  background-color: color-mix(in srgb, var(--chat-composer-glass-surface) 96%, transparent);
+}
+
+html[data-theme-id="city-783"] [data-slot="composer-host"]:focus-within {
+  --edge-w: 2px;
+  --edge-paint: var(--city-edge-gradient);
+}
+
+html[data-theme-id="city-783"] [data-chat-composer-main-surface="true"]::after {
+  display: none;
+}
+
+html[data-theme-id="city-783"] [data-slot="composer-shell"]:not([data-with-context])::before {
+  display: none;
+}
+
+html[data-theme-id="city-783"] [data-sidebar-row="card"]:focus-visible {
+  --edge-paint: var(--city-edge-gradient);
+}
+
+html[data-theme-id="city-783"] {
+  --city-edge-gradient-inv: linear-gradient(35deg, #eceff2 0 40%, #ad2222 50%, #eceff2 60% 100%);
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"] {
+  --sw-edge: #4b515b;
+  --sw-fill: color-mix(in srgb, #b9bec6 4%, #181a1f);
+  --sw-inset: 1px;
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  width: 36px;
+  height: 18px;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--sw-edge);
+  transition: none;
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"]::before {
+  content: "";
+  position: absolute;
+  inset: var(--sw-inset);
+  z-index: -1;
+  border-radius: 0;
+  background: var(--sw-fill);
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"]::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
+  border: 1px solid #4b515b;
+  border-radius: 0;
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"] [data-slot="switch-thumb"] {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  border-radius: 0;
+  box-shadow: none;
+  background: #8f949c;
+  translate: 0 0;
+  scale: none;
+  transform: none;
+  transition: translate 120ms steps(3);
+}
+
+html[data-theme-id="city-783"]
+  [data-slot="switch"][data-unchecked]:hover:not(:focus-visible):not([data-disabled]) {
+  --sw-edge: #8f949c;
+  --sw-fill: color-mix(in srgb, #b9bec6 8%, #181a1f);
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"][data-checked] {
+  --sw-edge: #ad2222;
+  --sw-fill: #ad2222;
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"][data-checked] [data-slot="switch-thumb"] {
+  translate: 18px 0;
+  background: #eceff2;
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"][data-checked]::after {
+  top: 6px;
+  right: auto;
+  left: 9px;
+  width: 2px;
+  height: 6px;
+  border: 0;
+  background: #eceff2;
+}
+
+html[data-theme-id="city-783"]
+  [data-slot="switch"][data-checked]:hover:not(:focus-visible):not([data-disabled]) {
+  --sw-edge: color-mix(in srgb, #eceff2 14%, #ad2222);
+  --sw-fill: color-mix(in srgb, #eceff2 14%, #ad2222);
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"]:focus-visible {
+  --sw-edge: var(--city-edge-gradient);
+  --sw-inset: 2px;
+  outline: none;
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"][data-checked]:focus-visible {
+  --sw-edge: var(--city-edge-gradient-inv);
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"][data-mixed] [data-slot="switch-thumb"] {
+  translate: 9px 0;
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"][data-mixed]::after {
+  display: none;
+}
+
+html[data-theme-id="city-783"] [data-slot="switch"][data-disabled] {
+  opacity: 0.4;
+}
+
+html[data-theme-id="city-783"] [data-slot="menu-checkbox-item"] > [class*="--thumb-size:"] {
+  --sw-edge: #4b515b;
+  --sw-fill: color-mix(in srgb, #b9bec6 4%, #181a1f);
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  width: 28px;
+  height: 14px;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--sw-edge);
+  transition: none;
+}
+
+html[data-theme-id="city-783"] [data-slot="menu-checkbox-item"] > [class*="--thumb-size:"]::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: 0;
+  background: var(--sw-fill);
+}
+
+html[data-theme-id="city-783"] [data-slot="menu-checkbox-item"] > [class*="--thumb-size:"]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  box-sizing: border-box;
+  width: 5px;
+  height: 5px;
+  border: 1px solid #4b515b;
+  border-radius: 0;
+}
+
+html[data-theme-id="city-783"] [data-slot="menu-checkbox-item"] > [class*="--thumb-size:"] > span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  aspect-ratio: auto;
+  border-radius: 0;
+  box-shadow: none;
+  background: #8f949c;
+  translate: 0 0;
+  scale: none;
+  transform: none;
+  transition: translate 120ms steps(3);
+}
+
+html[data-theme-id="city-783"]
+  [data-slot="menu-checkbox-item"]
+  > [class*="--thumb-size:"][data-checked] {
+  --sw-edge: #ad2222;
+  --sw-fill: #ad2222;
+}
+
+html[data-theme-id="city-783"]
+  [data-slot="menu-checkbox-item"]
+  > [class*="--thumb-size:"][data-checked]
+  > span {
+  translate: 14px 0;
+  background: #eceff2;
+}
+
+html[data-theme-id="city-783"]
+  [data-slot="menu-checkbox-item"]
+  > [class*="--thumb-size:"][data-checked]::after {
+  top: 4px;
+  right: auto;
+  left: 7px;
+  width: 2px;
+  height: 6px;
+  border: 0;
+  background: #eceff2;
+}
+
+html[data-theme-id="city-783"] :is([data-slot="checkbox"], [data-slot="radio"]) {
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #4b515b;
+  border-radius: 0;
+  box-shadow: none;
+  background: color-mix(in srgb, #b9bec6 4%, #181a1f);
+}
+
+html[data-theme-id="city-783"] :is([data-slot="checkbox"], [data-slot="radio"])::before {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-theme-id="city-783"]
+  :is([data-slot="checkbox"], [data-slot="radio"])[data-unchecked]:hover:not([data-disabled]) {
+  border-color: #8f949c;
+  background: color-mix(in srgb, #b9bec6 8%, #181a1f);
+}
+
+html[data-theme-id="city-783"] [data-slot="checkbox"]:is([data-checked], [data-indeterminate]) {
+  border-color: #ad2222;
+  background: #ad2222;
+}
+
+html[data-theme-id="city-783"] [data-slot="radio"][data-checked] {
+  border-color: #ad2222;
+}
+
+html[data-theme-id="city-783"] :is([data-slot="checkbox"], [data-slot="radio"]):focus-visible {
+  outline: 2px solid #ff5c5c;
+  outline-offset: 2px;
+}
+
+html[data-theme-id="city-783"] :is([data-slot="checkbox"], [data-slot="radio"])[data-disabled] {
+  opacity: 0.4;
+}
+
+html[data-theme-id="city-783"]
+  :is([data-slot="checkbox-indicator"], [data-slot="radio-indicator"]) {
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+  background: transparent;
+}
+
+html[data-theme-id="city-783"] [data-slot="radio-indicator"] {
+  width: 18px;
+  height: 18px;
+}
+
+html[data-theme-id="city-783"] [data-slot="checkbox-indicator"] {
+  color: #eceff2;
+}
+
+html[data-theme-id="city-783"] [data-slot="checkbox-indicator"] svg {
+  width: 14px;
+  height: 14px;
+}
+
+html[data-theme-id="city-783"] [data-slot="radio-indicator"]::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  background: #ff5c5c;
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    [data-slot="select-trigger"],
+    [data-slot="input-control"],
+    [data-slot="number-field-group"]
+  )[class*="border-input"] {
+  --fld-ew: 1px;
+  --fld-edge: color-mix(in srgb, #b9bec6 40%, #181a1f);
+  --fld-fill: color-mix(in srgb, #b9bec6 4%, #181a1f);
+  position: relative;
+  isolation: isolate;
+  min-height: 30px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--fld-edge);
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    [data-slot="select-trigger"],
+    [data-slot="input-control"],
+    [data-slot="number-field-group"]
+  )[class*="border-input"]::before {
+  content: "";
+  position: absolute;
+  inset: var(--fld-ew);
+  z-index: -1;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--fld-fill);
+}
+
+html[data-theme-id="city-783"] [data-slot="number-field-group"][class*="border-input"] {
+  padding: var(--fld-ew);
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    [data-slot="select-trigger"],
+    [data-slot="input-control"],
+    [data-slot="number-field-group"]
+  )[class*="border-input"]:hover {
+  --fld-edge: color-mix(in srgb, #b9bec6 25%, #181a1f);
+  --fld-fill: color-mix(in srgb, #b9bec6 8%, #181a1f);
+  color: #eceff2;
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    [data-slot="select-trigger"][data-popup-open],
+    [data-slot="select-trigger"]:focus-visible,
+    [data-slot="input-control"]:focus-within,
+    [data-slot="number-field-group"]:focus-within
+  )[class*="border-input"] {
+  --fld-ew: 2px;
+  --fld-edge: var(--city-edge-gradient);
+  --fld-fill: color-mix(in srgb, #b9bec6 10%, #181a1f);
+  color: #eceff2;
+  outline: none;
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    [data-slot="select-trigger"][aria-invalid="true"],
+    [data-slot="input-control"]:has([aria-invalid="true"]),
+    [data-slot="number-field-group"]:has([aria-invalid="true"])
+  )[class*="border-input"] {
+  --fld-edge: #e53939;
+}
+
+html[data-theme-id="city-783"] [data-slot="select-icon"] svg {
+  display: none;
+}
+
+html[data-theme-id="city-783"] [data-slot="select-icon"]::after {
+  content: "\25BE";
+  color: #8f949c;
+  font-size: 11px;
+}
+
+html[data-theme-id="city-783"] [data-slot="select-item"][data-highlighted] {
+  background: color-mix(in srgb, #b9bec6 8%, transparent);
+  color: #eceff2;
+}
+
+html[data-theme-id="city-783"] [data-slot="select-item"][data-selected] {
+  background: #2b2f37;
+  color: #eceff2;
+}
+
+html[data-theme-id="city-783"]
+  :is([data-slot="number-field-decrement"], [data-slot="number-field-increment"]) {
+  width: 26px;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  color: #8f949c;
+}
+
+html[data-theme-id="city-783"] [data-slot="number-field-decrement"] {
+  border-right: 1px solid color-mix(in srgb, #4b515b 60%, transparent);
+}
+
+html[data-theme-id="city-783"] [data-slot="number-field-increment"] {
+  border-left: 1px solid color-mix(in srgb, #4b515b 60%, transparent);
+}
+
+html[data-theme-id="city-783"]
+  :is([data-slot="number-field-decrement"], [data-slot="number-field-increment"]):hover {
+  background: color-mix(in srgb, #b9bec6 8%, transparent);
+  color: #eceff2;
+}
+
+html[data-theme-id="city-783"] .settings-slider {
+  --settings-slider-fill-position: calc(
+    var(--settings-slider-progress) + var(--settings-slider-fill-offset) * 0.625
+  );
+}
+
+html[data-theme-id="city-783"] .settings-slider::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 0;
+  box-shadow: none;
+  background: linear-gradient(
+    to right,
+    #ff5c5c 0 var(--settings-slider-fill-position),
+    color-mix(in srgb, #b9bec6 14%, transparent) var(--settings-slider-fill-position) 100%
+  );
+}
+
+html[data-theme-id="city-783"] .settings-slider::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #b9bec6;
+  transform: none;
+  transition: none;
+}
+
+html[data-theme-id="city-783"] .settings-slider::-moz-range-track {
+  height: 2px;
+  border-radius: 0;
+  box-shadow: none;
+  background: color-mix(in srgb, #b9bec6 14%, transparent);
+}
+
+html[data-theme-id="city-783"] .settings-slider::-moz-range-progress {
+  height: 2px;
+  border-radius: 0;
+  background: #ff5c5c;
+}
+
+html[data-theme-id="city-783"] .settings-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #b9bec6;
+  transform: none;
+  transition: none;
+}
+
+html[data-theme-id="city-783"] .settings-slider:hover::-webkit-slider-thumb {
+  background: #eceff2;
+}
+
+html[data-theme-id="city-783"] .settings-slider:hover::-moz-range-thumb {
+  background: #eceff2;
+}
+
+html[data-theme-id="city-783"] .settings-slider:active::-webkit-slider-thumb {
+  background: #ff5c5c;
+}
+
+html[data-theme-id="city-783"] .settings-slider:active::-moz-range-thumb {
+  background: #ff5c5c;
+}
+
+html[data-theme-id="city-783"] .settings-slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid #ff5c5c;
+  outline-offset: 2px;
+  background: #eceff2;
+}
+
+html[data-theme-id="city-783"] .settings-slider:focus-visible::-moz-range-thumb {
+  outline: 2px solid #ff5c5c;
+  outline-offset: 2px;
+  background: #eceff2;
+}
+
+html[data-theme-id="city-783"] .settings-slider:disabled {
+  opacity: 0.4;
+}
+
+html[data-theme-id="city-783"] [data-slot="kbd"] {
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 0;
+  box-shadow: none;
+  background: #2b2f37;
+  color: #8f949c;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+html[data-theme-id="city-783"] [data-slot="badge"] {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-theme-id="city-783"] [data-slot="badge"].bg-destructive {
+  background: #e53939;
+  color: #181a1f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+html[data-theme-id="city-783"]
+  [data-settings-nav]
+  [data-slot="sidebar-menu-button"]:hover:not([data-active="true"]) {
+  background: color-mix(in srgb, #b9bec6 8%, transparent);
+}
+
+html[data-theme-id="city-783"]
+  [data-settings-nav]
+  [data-slot="sidebar-menu-button"][data-active="true"] {
+  position: relative;
+  background: transparent;
+  color: #eceff2;
+  font-weight: 700;
+}
+
+html[data-theme-id="city-783"]
+  [data-settings-nav]
+  [data-slot="sidebar-menu-button"][data-active="true"]::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  width: 2px;
+  background: #ff5c5c;
+}
+
+html[data-theme-id="city-783"] [data-slot="settings-section-title"] {
+  color: #eceff2;
+  text-transform: lowercase;
+}
+
+html[data-theme-id="city-783"] [data-theme-library-card] {
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  background: #20232a;
+}
+
+html[data-theme-id="city-783"] [data-theme-library-card][data-active="true"] {
+  --edge-w: 2px;
+  --edge-paint: var(--city-edge-gradient);
+}
+
 body {
   background-image: var(--surface-grain);
   background-repeat: repeat;
@@ -1774,6 +2516,10 @@ code {
 ::-webkit-scrollbar-thumb {
   background: var(--app-scrollbar-thumb);
   border-radius: 3px;
+}
+
+html[data-theme-id="city-783"] ::-webkit-scrollbar-thumb {
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -2062,6 +2808,10 @@ code {
 .chat-markdown pre::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: color-mix(in srgb, var(--contrast-border) 78%, transparent);
+}
+
+html[data-theme-id="city-783"] .chat-markdown pre::-webkit-scrollbar-thumb {
+  border-radius: 0;
 }
 
 :is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblock-header {
@@ -2374,6 +3124,21 @@ code {
   background: Highlight;
   opacity: 0.3;
   pointer-events: none;
+}
+
+html[data-theme-id="city-783"]
+  :is(
+    .chat-markdown :not(pre) > code,
+    .chat-markdown a[data-footnote-ref],
+    .chat-markdown a[data-footnote-backref],
+    .chat-markdown pre,
+    .composer-tiptap :not(pre) > code,
+    .composer-tiptap .ProseMirror-selectednode
+  ),
+html[data-theme-id="city-783"]
+  .composer-tiptap.ProseMirror-focused
+  .composer-chip-range-selected::after {
+  border-radius: 0;
 }
 
 /* Rich-text task lists render as real checkboxes. Tiptap's TaskItem NodeView

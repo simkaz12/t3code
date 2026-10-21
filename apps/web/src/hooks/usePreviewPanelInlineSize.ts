@@ -6,6 +6,7 @@ import { observeResize } from "../lib/observeResize";
 export interface PreviewPanelInlineSize {
   readonly width: number;
   readonly handlers: ResizableWidthHandlers;
+  readonly setWidth: (width: number) => void;
 }
 
 const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "t3code:preview-panel-width";
@@ -25,26 +26,41 @@ export function usePreviewPanelInlineSize(
     readonly widthStorageKey?: string | undefined;
     readonly defaultWidth?: number | undefined;
     readonly container?: HTMLElement | null | undefined;
+    readonly widthFraction?: number | undefined;
   } = {},
 ): PreviewPanelInlineSize {
-  const maxWidth = useViewportClampedMaxWidth(hostRef, options.enabled ?? true, options.container);
-  return useResizableWidth({
+  const { maxWidth, fractionWidth } = useViewportClampedMaxWidth(
+    hostRef,
+    options.enabled ?? true,
+    options.container,
+    options.widthFraction,
+  );
+  const size = useResizableWidth({
     storageKey: options.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY,
     defaultWidth: options.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH,
     minWidth: PREVIEW_PANEL_MIN_WIDTH,
     maxWidth,
     edge: "left",
   });
+  return fractionWidth === null
+    ? size
+    : {
+        ...size,
+        width: fractionWidth,
+        handlers: { ...size.handlers, onPointerDown: () => undefined },
+      };
 }
 
 function useViewportClampedMaxWidth(
   hostRef: RefObject<HTMLElement | null> | undefined,
   enabled: boolean,
   container: HTMLElement | null | undefined,
-): number {
-  const [maxWidth, setMaxWidth] = useState(() =>
-    getPreviewPanelMaxWidth(typeof window === "undefined" ? 1280 : window.innerWidth),
-  );
+  widthFraction: number | undefined,
+) {
+  const [size, setSize] = useState(() => ({
+    maxWidth: getPreviewPanelMaxWidth(typeof window === "undefined" ? 1280 : window.innerWidth),
+    fractionWidth: null as number | null,
+  }));
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     const row = container ?? (enabled ? hostRef?.current?.parentElement : null) ?? null;
@@ -54,7 +70,16 @@ function useViewportClampedMaxWidth(
     // row resizes every frame of a sidebar drag, but the cap rarely moves, and an
     // unchanged cap skips re-rendering the panel's owner.
     const measure = () => {
-      setMaxWidth(getPreviewPanelMaxWidth(window.innerWidth, row?.clientWidth));
+      const maxWidth = getPreviewPanelMaxWidth(window.innerWidth, row?.clientWidth);
+      const fractionWidth =
+        widthFraction === undefined
+          ? null
+          : (row?.clientWidth ?? window.innerWidth) * widthFraction;
+      setSize((previous) =>
+        previous.maxWidth === maxWidth && previous.fractionWidth === fractionWidth
+          ? previous
+          : { maxWidth, fractionWidth },
+      );
     };
     measure();
     let frame = 0;
@@ -72,8 +97,8 @@ function useViewportClampedMaxWidth(
       if (frame !== 0) window.cancelAnimationFrame(frame);
       stopObserving?.();
     };
-  }, [container, hostRef, enabled]);
-  return maxWidth;
+  }, [container, hostRef, enabled, widthFraction]);
+  return { ...size, fractionWidth: widthFraction === undefined ? null : size.fractionWidth };
 }
 export function getPreviewPanelMaxWidth(viewportWidth: number, containerWidth?: number): number {
   const fractionCap = Math.floor(viewportWidth * PREVIEW_PANEL_MAX_WIDTH_FRACTION);

@@ -1064,6 +1064,16 @@ describe("resolveShortcutCommand", () => {
     );
   });
 
+  it("binds Escape to thread.stop only while the composer is focused and a turn runs", () => {
+    const input = event({ key: "Escape" });
+    const resolve = (context: Record<string, boolean>) =>
+      resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Linux", context });
+
+    assert.strictEqual(resolve({ composerFocus: true, turnRunning: true }), "thread.stop");
+    assert.isNull(resolve({ composerFocus: true, turnRunning: false }));
+    assert.isNull(resolve({ composerFocus: false, turnRunning: true }));
+  });
+
   it("returns dynamic script commands", () => {
     const keybindings = compile([{ shortcut: modShortcut("r"), command: "script.setup.run" }]);
 

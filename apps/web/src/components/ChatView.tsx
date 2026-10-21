@@ -227,7 +227,7 @@ import { settleAndAdvance } from "../settleAndAdvance";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { FileMetadataThreadProvider } from "../hooks/FileMetadataThreadProvider";
-import { usePreviewPanelInlineSize } from "../hooks/usePreviewPanelInlineSize";
+import { useQuickTerminalSplit } from "./chat/useQuickTerminalSplit";
 import {
   RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
   type ThreadPanelPresentation,
@@ -580,6 +580,8 @@ const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 // broadcast to all shell subscribers.
 const VISIT_DISPATCH_THROTTLE_MS = 10_000;
 const RELATED_THREAD_SHELL_WAIT_MS = 1_000;
+const ESCAPE_OWNING_LAYER_SELECTOR =
+  '[data-composer-stash-drawer="true"],[data-mcp-app-fullscreen]';
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [];
 function useDraftHeroLayoutTransition(
@@ -1661,10 +1663,6 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadRef?.environmentId ?? null,
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
-  const previewPanelInlineSize = usePreviewPanelInlineSize(undefined, {
-    container: workspaceLayoutElement,
-    widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,
-  });
   const activeThreadShell = serverThread;
   const timelineThreadError =
     serverRuntime?.status === "failed" &&
@@ -3861,6 +3859,17 @@ export default function ChatView(props: ChatViewProps) {
     void launched.result;
   };
   const addTerminalSurfaceStable = useStableCallback(addTerminalSurface);
+  const { inlineSize: previewPanelInlineSize, toggle: toggleQuickTerminal } = useQuickTerminalSplit(
+    {
+      threadRef: activeThreadRef,
+      enabled: !shouldUsePlanSidebarSheet && activeProject !== null && canOperateTerminal,
+      container: workspaceLayoutElement,
+      panelState: rightPanelState,
+      terminalActions,
+      focusTerminal: () => setTerminalFocusRequestId((value) => value + 1),
+      focusComposer: focusComposerStable,
+    },
+  );
   const splitPanelTerminal = (direction: "horizontal" | "vertical" = "horizontal") => {
     if (
       !activeThreadRef ||
@@ -5724,6 +5733,13 @@ export default function ChatView(props: ChatViewProps) {
     isDesktop: isElectron,
   });
   const getShortcutContextStable = useStableCallback(getShortcutContext);
+  const shouldEscapeYieldToUi = (event: KeyboardEvent) =>
+    event.isComposing ||
+    event.keyCode === 229 ||
+    document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR) !== null ||
+    document.querySelector(ESCAPE_OWNING_LAYER_SELECTOR) !== null ||
+    composerRef.current?.isTriggerMenuOpen() === true ||
+    composerRef.current?.isModelPickerOpen() === true;
   const timelineSkills = activeProviderStatus
     ? resolveProviderSkillsForCwd(activeProviderStatus, gitCwd)
     : EMPTY_PROVIDER_SKILLS;
@@ -5789,6 +5805,10 @@ export default function ChatView(props: ChatViewProps) {
       "terminal.toggle": () => {
         if (!terminalUiState.terminalOpen && !canReadTerminal && !canOperateTerminal) return false;
         toggleTerminalVisibilityStable();
+      },
+      "terminal.quickToggle": ({ event }) => {
+        if (event.repeat) return;
+        return toggleQuickTerminal();
       },
       "chat.find": () => {
         if (!isServerThread || serverConfig?.threadFind !== true) return false;
@@ -5868,6 +5888,7 @@ export default function ChatView(props: ChatViewProps) {
         queuedRunsControlRef.current?.editLatest(event.repeat) === true,
       "thread.stop": ({ event }) => {
         if (!canInterruptRunningThread) return false;
+        if (event.key === "Escape" && shouldEscapeYieldToUi(event)) return false;
         if (!event.repeat) void onInterruptStable();
       },
     },

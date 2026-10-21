@@ -227,6 +227,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["transparent transparency solid menus dialogs composer"],
   },
   {
+    id: "city-background",
+    title: "Background",
+    to: "/settings/appearance",
+    searchTerms: ["city 783 pattern cubes grid isometric dots hatch"],
+  },
+  {
     id: "diff-color-scheme",
     title: "Diff colors",
     to: "/settings/appearance",

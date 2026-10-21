@@ -80,6 +80,13 @@ import {
   readThemePreference,
   useTheme,
 } from "../../hooks/useTheme";
+import { useCityBackground, useIsCityTheme } from "../../hooks/useCityBackground";
+import {
+  CITY_BACKGROUND_GROUPS,
+  CITY_BACKGROUNDS,
+  DEFAULT_CITY_BACKGROUND_ID,
+  findCityBackground,
+} from "../../cityBackgrounds";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import {
   useScopedSettings,
@@ -139,7 +146,15 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from "../ui/number-field";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import {
+  Select,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -1083,6 +1098,8 @@ export function AppearanceSettingsPanel() {
     themeHalves,
   } = useTheme();
   const customThemes = useCustomThemes();
+  const isCityTheme = useIsCityTheme();
+  const [cityBackgroundId, setCityBackgroundId] = useCityBackground();
   const [isImportThemeOpen, setIsImportThemeOpen] = useState(false);
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -1224,6 +1241,45 @@ export function AppearanceSettingsPanel() {
             </div>
           }
         />
+
+        {isCityTheme ? (
+          <SettingsRow
+            {...searchableSetting("city-background")}
+            description="Pattern drawn behind the sidebar and chat."
+            resetAction={
+              cityBackgroundId !== DEFAULT_CITY_BACKGROUND_ID ? (
+                <SettingResetButton
+                  label="background"
+                  onClick={() => setCityBackgroundId(DEFAULT_CITY_BACKGROUND_ID)}
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={cityBackgroundId}
+                onValueChange={(value) => {
+                  if (typeof value === "string") setCityBackgroundId(findCityBackground(value).id);
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full sm:w-52" aria-label="Background">
+                  <SelectValue>{findCityBackground(cityBackgroundId).label}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {CITY_BACKGROUND_GROUPS.map((group) => (
+                    <SelectGroup key={group.id}>
+                      <SelectGroupLabel>{group.label}</SelectGroupLabel>
+                      {CITY_BACKGROUNDS.filter((entry) => entry.group === group.id).map((entry) => (
+                        <SelectItem hideIndicator key={entry.id} value={entry.id}>
+                          {entry.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectPopup>
+              </Select>
+            }
+          />
+        ) : null}
 
         {showEnvironmentIdentification ? (
           <SettingsRow

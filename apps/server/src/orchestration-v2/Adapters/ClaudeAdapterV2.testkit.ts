@@ -1730,7 +1730,7 @@ async function recordClaudeActiveSteeringQuery(input: {
   const offerSteeringPrompts = () => {
     for (let index = 1; index < input.prompts.length; index += 1) {
       if (!offeredPrompts.has(index)) {
-        offerPrompt(index, "now");
+        offerPrompt(index, "next");
       }
     }
   };

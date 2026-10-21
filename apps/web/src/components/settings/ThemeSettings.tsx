@@ -153,6 +153,7 @@ function ThemeLibraryCard({
               isActive && "bg-accent/30",
             )}
             data-theme-library-card={theme.id}
+            data-active={isActive}
             onClick={onUse}
             style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
           >

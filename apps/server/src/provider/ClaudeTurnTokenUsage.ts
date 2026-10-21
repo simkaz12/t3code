@@ -23,8 +23,8 @@ function addKnownCount(finalCount: unknown, earlierCounts: ReadonlyArray<unknown
   );
 }
 
-// A steer ends the running segment with an aborted result, and the SDK scopes
-// each result's usage to its own segment.
+// A steer ends the running segment with its own result (an aborted one from a
+// legacy abort steer), and the SDK scopes each result's usage to its own segment.
 function withEarlierSegmentUsage(
   usage: Record<string, unknown>,
   earlierSegmentUsage: ReadonlyArray<unknown>,

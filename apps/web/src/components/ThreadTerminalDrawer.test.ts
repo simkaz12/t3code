@@ -150,6 +150,42 @@ describe("terminalThemeFromApp", () => {
     expect(theme.foreground).toEqual({ r: 255, g: 255, b: 255 });
     expect(theme.cursor).toEqual({ r: 221, g: 221, b: 221 });
   });
+
+  it("takes ANSI palette entries from the theme and keeps defaults for unset ones", () => {
+    const drawer = {};
+    let canvasColor = "";
+
+    vi.stubGlobal("document", {
+      documentElement: { classList: { contains: () => true } },
+      body: {},
+      querySelector: () => drawer,
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => ({
+          clearRect: () => undefined,
+          fillRect: () => undefined,
+          set fillStyle(value: string) {
+            canvasColor = value;
+          },
+          getImageData: () => ({
+            data: canvasColor === "#123456" ? [18, 52, 86, 255] : [0, 0, 0, 0],
+          }),
+        }),
+      }),
+    });
+    vi.stubGlobal("getComputedStyle", () => ({
+      backgroundColor: "",
+      color: "",
+      colorScheme: "dark",
+      getPropertyValue: (name: string) => (name === "--terminal-ansi-1" ? " #123456 " : ""),
+    }));
+
+    const { palette } = terminalThemeFromApp();
+
+    expect(palette?.[1]).toEqual({ r: 18, g: 52, b: 86 });
+    expect(palette?.[2]).toEqual({ r: 13, g: 188, b: 121 });
+  });
 });
 
 describe("terminal selection actions", () => {
