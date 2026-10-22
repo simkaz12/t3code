@@ -1788,6 +1788,8 @@ html[data-theme-id="city-783"]
 
 html[data-theme-id="city-783"] {
   --city-edge-gradient: linear-gradient(35deg, #ad2222 0 40%, #eceff2 50%, #ad2222 60% 100%);
+  --city-edge-rest: color-mix(in srgb, #b9bec6 40%, #181a1f);
+  --city-edge-focus: #ad2222;
 }
 
 html[data-theme-id="city-783"]
@@ -1802,7 +1804,7 @@ html[data-theme-id="city-783"]
     .surface-clip.relative
   ) {
   --edge-w: 1px;
-  --edge-paint: color-mix(in srgb, #b9bec6 40%, #181a1f);
+  --edge-paint: var(--city-edge-rest);
 }
 
 html[data-theme-id="city-783"]
@@ -1884,7 +1886,7 @@ html[data-theme-id="city-783"]
   pointer-events: none;
   border: 0;
   box-shadow: none;
-  background: var(--edge-paint, color-mix(in srgb, #b9bec6 40%, #181a1f));
+  background: var(--edge-paint, var(--city-edge-rest));
   clip-path: var(--edge-ring);
 }
 
@@ -1907,15 +1909,106 @@ html[data-theme-id="city-783"] [data-slot="composer-host"] {
 
 html[data-theme-id="city-783"] [data-slot="composer-host"]:focus-within {
   --edge-w: 2px;
-  --edge-paint: var(--city-edge-gradient);
+  --edge-paint: var(--city-edge-focus);
+}
+
+html[data-theme-id="city-783"] [data-slot="composer-shell"] {
+  --chat-composer-outline: var(--city-edge-rest);
 }
 
 html[data-theme-id="city-783"] [data-chat-composer-main-surface="true"]::after {
   display: none;
 }
 
+html[data-theme-id="city-783"]
+  [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
+  [data-slot="composer-host"] {
+  background-color: transparent;
+}
+
+html[data-theme-id="city-783"]
+  [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
+  [data-slot="composer-host"]::after {
+  display: none;
+}
+
+html[data-theme-id="city-783"]
+  [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
+  [data-chat-composer-main-surface="true"] {
+  clip-path: var(--edge-outer);
+}
+
+html[data-theme-id="city-783"]
+  [data-slot="composer-shell"]:has([data-composer-banner-surface="attached"])
+  [data-chat-composer-main-surface="true"]::after {
+  display: block;
+  z-index: -1;
+  border: 0;
+  box-shadow: none;
+  background: var(--edge-paint, var(--city-edge-rest));
+  clip-path: var(--edge-ring);
+}
+
 html[data-theme-id="city-783"] [data-slot="composer-shell"]:not([data-with-context])::before {
   display: none;
+}
+
+html[data-theme-id="city-783"] [data-slot="composer-shell"][data-with-context]::before {
+  clip-path: polygon(
+    6px 0,
+    calc(100% - 6px) 0,
+    100% 6px,
+    100% calc(100% - var(--chat-composer-context-extension) - 6px),
+    calc(100% - 6px) calc(100% - var(--chat-composer-context-extension)),
+    calc(100% - var(--chat-composer-drawer-inset))
+      calc(100% - var(--chat-composer-context-extension)),
+    calc(100% - var(--chat-composer-drawer-inset)) calc(100% - 6px),
+    calc(100% - var(--chat-composer-drawer-inset) - 6px) 100%,
+    calc(var(--chat-composer-drawer-inset) + 6px) 100%,
+    var(--chat-composer-drawer-inset) calc(100% - 6px),
+    var(--chat-composer-drawer-inset) calc(100% - var(--chat-composer-context-extension)),
+    6px calc(100% - var(--chat-composer-context-extension)),
+    0 calc(100% - var(--chat-composer-context-extension) - 6px),
+    0 6px
+  );
+}
+
+html[data-theme-id="city-783"] [data-slot="composer-context-strip"] {
+  --strip-edge-cut-in: calc(6px - 1px * 0.586);
+}
+
+html[data-theme-id="city-783"] [data-slot="composer-context-strip"]::before {
+  border: 0;
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% calc(100% - 6px),
+    calc(100% - 6px) 100%,
+    6px 100%,
+    0 calc(100% - 6px)
+  );
+}
+
+html[data-theme-id="city-783"] [data-slot="composer-context-strip"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--city-edge-rest);
+  clip-path: polygon(
+    0 var(--spacing-composer-seam),
+    0 calc(100% - 6px),
+    6px 100%,
+    calc(100% - 6px) 100%,
+    100% calc(100% - 6px),
+    100% var(--spacing-composer-seam),
+    calc(100% - 1px) var(--spacing-composer-seam),
+    calc(100% - 1px) calc(100% - 1px - var(--strip-edge-cut-in)),
+    calc(100% - 1px - var(--strip-edge-cut-in)) calc(100% - 1px),
+    calc(1px + var(--strip-edge-cut-in)) calc(100% - 1px),
+    1px calc(100% - 1px - var(--strip-edge-cut-in)),
+    1px var(--spacing-composer-seam)
+  );
 }
 
 html[data-theme-id="city-783"] [data-sidebar-row="card"]:focus-visible {
