@@ -25,6 +25,21 @@ import {
 } from "./KeybindingsSettings.logic";
 
 describe("KeybindingsSettings.logic", () => {
+  it("exposes the quick terminal default in searchable editable rows", () => {
+    const rows = filterKeybindingRows(buildKeybindingRows(DEFAULT_RESOLVED_KEYBINDINGS), "quick");
+
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        command: "terminal.quickToggle",
+        key: "mod+alt+t",
+        defaultKey: "mod+alt+t",
+        source: "Default",
+        conflicts: [],
+      }),
+    );
+    expect(buildKeybindingCommandOptions([])).toContain("terminal.quickToggle");
+  });
+
   it("lists composer, provider, and pull request commands with editable defaults", () => {
     const rows = buildKeybindingRows(DEFAULT_RESOLVED_KEYBINDINGS);
     for (const command of [

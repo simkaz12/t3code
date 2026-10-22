@@ -25,6 +25,7 @@ import {
   isTerminalSplitShortcut,
   isTerminalSplitVerticalShortcut,
   isTerminalToggleShortcut,
+  isQuickTerminalToggleShortcut,
   resolveChatShortcutCommand,
   resolveShortcutCommand,
   shouldShowThreadJumpHintsForModifiers,
@@ -681,6 +682,52 @@ describe("model picker navigation helpers", () => {
 });
 
 describe("chat/editor shortcuts", () => {
+  it.each([false, true])(
+    "routes the quick terminal default with terminal focus %s",
+    (terminalFocus) => {
+      const input = event({ key: "t", ctrlKey: true, altKey: true });
+      const options = { platform: "Linux", context: { terminalFocus } };
+
+      assert.isTrue(isQuickTerminalToggleShortcut(input, DEFAULT_RESOLVED_KEYBINDINGS, options));
+      assert.strictEqual(
+        resolveChatShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, [], options),
+        "terminal.quickToggle",
+      );
+      assert.isTrue(
+        isTerminalToggleShortcut(
+          event({ key: "j", ctrlKey: true }),
+          DEFAULT_RESOLVED_KEYBINDINGS,
+          options,
+        ),
+      );
+    },
+  );
+
+  it("uses the remapped quick terminal shortcut in the terminal instead of the default", () => {
+    const bindings = mergeWithDefaultKeybindings(
+      compileResolvedKeybindingsConfig([{ key: "ctrl+shift+y", command: "terminal.quickToggle" }]),
+    );
+    const options = { platform: "Linux", context: { terminalFocus: true, terminalOpen: true } };
+    const remapped = event({ key: "y", ctrlKey: true, shiftKey: true });
+
+    assert.isTrue(isQuickTerminalToggleShortcut(remapped, bindings, options));
+    assert.strictEqual(
+      resolveChatShortcutCommand(remapped, bindings, [], options),
+      "terminal.quickToggle",
+    );
+    assert.isFalse(
+      isQuickTerminalToggleShortcut(
+        event({ key: "t", ctrlKey: true, altKey: true }),
+        bindings,
+        options,
+      ),
+    );
+    assert.strictEqual(
+      shortcutLabelForCommand(bindings, "terminal.quickToggle", "Linux"),
+      "Ctrl+Shift+Y",
+    );
+  });
+
   it("matches chat.new shortcut", () => {
     assert.strictEqual(
       resolveShortcutCommand(event({ key: "o", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {

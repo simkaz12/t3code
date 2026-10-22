@@ -4,11 +4,17 @@ import { useLayoutEffect, useState } from "react";
 
 import { usePreviewPanelInlineSize } from "../../hooks/usePreviewPanelInlineSize";
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
+import {
+  selectThreadRightPanelState,
+  type ThreadRightPanelState,
+  useRightPanelStore,
+} from "../../rightPanelStore";
 import type { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { useSidebar } from "../ui/sidebar";
 
 type TerminalActions = ReturnType<typeof useThreadTerminalActions>;
+
+const terminalIds = new Map<string, string>();
 
 type QuickTerminalLayout = {
   readonly threadRef: ScopedThreadRef;
@@ -23,7 +29,6 @@ type QuickTerminalLayout = {
 };
 
 export function createQuickTerminalSplit(onActiveChange: (threadKey: string | null) => void) {
-  const terminalIds = new Map<string, string>();
   let layout: QuickTerminalLayout | null = null;
 
   const restore = () => {
@@ -100,17 +105,25 @@ export function createQuickTerminalSplit(onActiveChange: (threadKey: string | nu
       input.focusTerminal();
       return true;
     },
-    reconcile(threadRef: ScopedThreadRef | null, enabled: boolean) {
+    reconcile(
+      threadRef: ScopedThreadRef | null,
+      enabled: boolean,
+      currentPanel?: ThreadRightPanelState,
+    ) {
       if (!layout) return;
-      const panel = selectThreadRightPanelState(
-        useRightPanelStore.getState().byThreadKey,
-        layout.threadRef,
-      );
+      const sameThread =
+        threadRef !== null && scopedThreadKey(threadRef) === scopedThreadKey(layout.threadRef);
+      const panel =
+        sameThread && currentPanel
+          ? currentPanel
+          : selectThreadRightPanelState(
+              useRightPanelStore.getState().byThreadKey,
+              layout.threadRef,
+            );
       const selected = panel.surfaces.find((surface) => surface.id === panel.activeSurfaceId);
       if (
         !enabled ||
-        !threadRef ||
-        scopedThreadKey(threadRef) !== scopedThreadKey(layout.threadRef) ||
+        !sameThread ||
         !panel.isOpen ||
         selected?.kind !== "terminal" ||
         !selected.terminalIds.includes(layout.terminalId)
@@ -125,7 +138,7 @@ export function useQuickTerminalSplit(input: {
   readonly threadRef: ScopedThreadRef | null;
   readonly enabled: boolean;
   readonly container: HTMLElement | null;
-  readonly panelState: unknown;
+  readonly panelState: ThreadRightPanelState;
   readonly terminalActions: TerminalActions;
   readonly focusTerminal: () => void;
   readonly focusComposer: () => void;
@@ -141,7 +154,7 @@ export function useQuickTerminalSplit(input: {
   });
 
   useLayoutEffect(() => {
-    controller.reconcile(input.threadRef, input.enabled);
+    controller.reconcile(input.threadRef, input.enabled, input.panelState);
   }, [controller, input.threadRef, input.enabled, input.panelState]);
   useLayoutEffect(
     () => () => {
