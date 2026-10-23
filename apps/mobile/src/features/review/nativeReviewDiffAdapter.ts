@@ -170,6 +170,22 @@ function buildReviewCommentsCacheKey(comments: ReadonlyArray<ReviewInlineComment
   );
 }
 
+const DARK_DIFF_TINTS = {
+  addBackground: "#0d2f28",
+  deleteBackground: "#391415",
+  addBar: "#00cab1",
+  addText: "#5ECC71",
+  deleteText: "#FF6762",
+} as const;
+
+const CITY_DIFF_TINTS = {
+  addBackground: "#262a31",
+  deleteBackground: "#391f23",
+  addBar: "#8f949c",
+  addText: "#dce0e6",
+  deleteText: "#ff5c5c",
+} as const;
+
 export function createNativeReviewDiffTheme(
   scheme: TerminalAppearanceScheme,
   themeId: MobileThemeId,
@@ -196,12 +212,8 @@ export function createNativeReviewDiffTheme(
       border: nativeColor(appTheme["--color-border"]),
       hunkBackground: nativeColor(appTheme["--color-subtle-strong"]),
       hunkText: nativeColor(appTheme["--color-foreground"]),
-      addBackground: "#0d2f28",
-      deleteBackground: "#391415",
-      addBar: "#00cab1",
       deleteBar: terminalRed ?? "#ff2e3f",
-      addText: "#5ECC71",
-      deleteText: "#FF6762",
+      ...(themeId === "city" ? CITY_DIFF_TINTS : DARK_DIFF_TINTS),
     };
   }
 

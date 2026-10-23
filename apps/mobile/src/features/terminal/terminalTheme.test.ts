@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { BUILT_IN_THEMES, getThemeColorsForAppearance } from "@t3tools/shared/themePalettes";
 
+import { CITY_TERMINAL_ANSI } from "../../lib/cityTheme";
 import { themeColorToNativeColor } from "../../lib/mobileTheme";
 
 import { buildGhosttyThemeConfig, getMobileTerminalTheme } from "./terminalTheme";
@@ -30,6 +31,21 @@ describe("getMobileTerminalTheme", () => {
     expect(ocean.background).not.toBe(standard.background);
     expect(ocean.cursorForeground).not.toBe(standard.cursorForeground);
     expect(ocean.palette).toEqual(standard.palette);
+  });
+
+  it("replaces the ANSI palette for city and keeps the terminal roles", () => {
+    const standard = getMobileTerminalTheme("t3-code", "dark");
+    const city = getMobileTerminalTheme("city", "dark");
+
+    expect(city.palette).toEqual(CITY_TERMINAL_ANSI);
+    expect(city.palette).toHaveLength(16);
+    for (const color of city.palette) {
+      expect(color).toMatch(/^#[\da-f]{6}$/i);
+    }
+    expect(city.palette).not.toEqual(standard.palette);
+    expect(city.background).toBe("#181a1f");
+    expect(city.foreground).toBe("#b9bec6");
+    expect(city.cursorForeground).toBe("#ff5c5c");
   });
 
   it("uses the canonical desktop terminal roles for built-in themes", () => {

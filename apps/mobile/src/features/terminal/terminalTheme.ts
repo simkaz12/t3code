@@ -1,3 +1,4 @@
+import { CITY_TERMINAL_ANSI } from "../../lib/cityTheme";
 import {
   getMobileThemeColors,
   getMobileThemeVariables,
@@ -111,6 +112,7 @@ export function getMobileTerminalTheme(
     border: colors["--color-border"],
     cursorForeground: themeColorToNativeColor(palette.terminalCursor),
     cursorBackground: background,
+    ...(themeId === "city" ? { palette: CITY_TERMINAL_ANSI } : {}),
   };
 }
 

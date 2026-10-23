@@ -382,6 +382,19 @@ describe("createNativeReviewDiffTheme", () => {
     },
   );
 
+  it("tints city diffs with red and grey instead of teal and green", () => {
+    const theme = createNativeReviewDiffTheme("dark", "city", appTheme("city", "dark"));
+
+    expect(theme).toMatchObject({
+      addBackground: "#262a31",
+      addBar: "#8f949c",
+      addText: "#dce0e6",
+      deleteBackground: "#391f23",
+      deleteBar: "#e53939",
+      deleteText: "#ff5c5c",
+    });
+  });
+
   it("uses the selected app palette for native code surfaces", () => {
     const standard = createNativeReviewDiffTheme("dark", "t3-code", appTheme("t3-code", "dark"));
     const iris = createNativeReviewDiffTheme("dark", "iris", appTheme("iris", "dark"));

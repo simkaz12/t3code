@@ -42,6 +42,7 @@ export function getMobileUniwindThemeName(
   themeId: MobileThemeId,
   appearance: MobileThemeAppearance,
 ): MobileUniwindThemeName {
+  if (themeId === "city") return "dark";
   return themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you"
     ? appearance
     : `${themeId}-${appearance}`;
