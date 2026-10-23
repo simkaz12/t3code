@@ -27,11 +27,13 @@ import type { Preferences } from "../../../persistence/mobile-preferences";
 import { isSystemColorsAvailable, readSystemColorPalettes } from "../../../lib/materialYouPalette";
 import { materialYouPaletteToMobileThemeVariables } from "../../../lib/materialYouTheme";
 import { getMobileThemeRuntimeVariables } from "../../../lib/mobileThemeVariables";
+import { fontFamilyVariables, getFontFamilies, type FontFamilies } from "../../../lib/fontFamilies";
 import type { MobileThemeVariables } from "../../../lib/mobileTheme";
 import {
   createMobileThemePairPatch,
   createMobileThemeSelectionPatch,
   normalizeMobileThemeMode,
+  resolveMobileThemeAppearance,
   resolveMobileThemeIds,
   type MobileThemeAppearance,
   type MobileThemeId,
@@ -50,6 +52,7 @@ interface AppearancePreferencesContextValue {
   readonly themeIds: MobileThemeIds;
   readonly themeMode: MobileThemeMode;
   readonly themeAppearance: MobileThemeAppearance;
+  readonly fontFamilies: FontFamilies;
   readonly systemColorsAvailable: boolean;
   readonly systemColorsActive: boolean;
   readonly themeVariables: MobileThemeVariables;
@@ -86,13 +89,15 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     [storedPreferences],
   );
   const themeMode = normalizeMobileThemeMode(storedPreferences?.themeMode);
-  const themeAppearance = themeMode === "system" ? systemColorScheme : themeMode;
+  const requestedAppearance = themeMode === "system" ? systemColorScheme : themeMode;
   const resolvedThemeIds = resolveMobileThemeIds(storedPreferences ?? {});
   const themeIds = useMemo<MobileThemeIds>(
     () => ({ light: resolvedThemeIds.light, dark: resolvedThemeIds.dark }),
     [resolvedThemeIds.dark, resolvedThemeIds.light],
   );
-  const themeId = themeIds[themeAppearance];
+  const themeId = themeIds[requestedAppearance];
+  const themeAppearance = resolveMobileThemeAppearance(themeId, requestedAppearance);
+  const fontFamilies = getFontFamilies(themeId);
   const systemColorsActive = themeId === "material-you" && isSystemColorsAvailable;
   const [systemColorPalettes, setSystemColorPalettes] = useState(readSystemColorPalettes);
   useEffect(() => {
@@ -125,7 +130,11 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     };
     return { light: resolve("light"), dark: resolve("dark") };
   }, [themeIds, systemColorPalettes]);
-  const themeVariables = themeVariablesByAppearance[themeAppearance];
+  const themeVariables = themeVariablesByAppearance[requestedAppearance];
+  const scopedVariables = useMemo(
+    () => ({ ...themeVariables, ...fontFamilyVariables(themeId) }),
+    [themeVariables, themeId],
+  );
   const activeThemeName = getMobileUniwindThemeName(themeId, themeAppearance);
   const { baseFontSize, codeFontSize, codeWordBreak, terminalFontSize } = preferences;
   const appearance = useMemo(
@@ -279,6 +288,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
+      fontFamilies,
       systemColorsAvailable: isSystemColorsAvailable,
       systemColorsActive,
       themeVariables,
@@ -301,6 +311,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeIds,
       themeMode,
       themeAppearance,
+      fontFamilies,
       systemColorsActive,
       themeVariables,
       themeVariablesByAppearance,
@@ -321,7 +332,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   return (
     <AppearancePreferencesContext.Provider value={value}>
       <ScopedTheme theme={activeThemeName}>
-        <ScopedVariables variables={themeVariables}>{props.children}</ScopedVariables>
+        <ScopedVariables variables={scopedVariables}>{props.children}</ScopedVariables>
       </ScopedTheme>
     </AppearancePreferencesContext.Provider>
   );

@@ -22,6 +22,11 @@ describe("mobileThemeRuntime", () => {
     expect(getMobileUniwindThemeName("t3-chat", "dark")).toBe("t3-chat-dark");
   });
 
+  it("keeps the dark-only city palette on the dark Uniwind theme", () => {
+    expect(getMobileUniwindThemeName("city", "light")).toBe("dark");
+    expect(getMobileUniwindThemeName("city", "dark")).toBe("dark");
+  });
+
   it("hydrates text variables and clears the native appearance override", () => {
     const operations = createMobileThemeRuntimeOperations(null, initialState);
     const variableOperations = operations.filter(

@@ -118,6 +118,12 @@ const dmSansFonts = {
   bold: "@expo-google-fonts/dm-sans/700Bold/DMSans_700Bold.ttf",
 } as const;
 
+const jetBrainsMonoFonts = {
+  regular: "@expo-google-fonts/jetbrains-mono/400Regular/JetBrainsMono_400Regular.ttf",
+  medium: "@expo-google-fonts/jetbrains-mono/500Medium/JetBrainsMono_500Medium.ttf",
+  bold: "@expo-google-fonts/jetbrains-mono/700Bold/JetBrainsMono_700Bold.ttf",
+} as const;
+
 const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-widgets",
   {
@@ -322,7 +328,14 @@ const config: ExpoConfig = {
       "expo-font",
       {
         ios: {
-          fonts: [dmSansFonts.regular, dmSansFonts.medium, dmSansFonts.bold],
+          fonts: [
+            dmSansFonts.regular,
+            dmSansFonts.medium,
+            dmSansFonts.bold,
+            jetBrainsMonoFonts.regular,
+            jetBrainsMonoFonts.medium,
+            jetBrainsMonoFonts.bold,
+          ],
         },
         android: {
           fonts: [
@@ -337,6 +350,18 @@ const config: ExpoConfig = {
             {
               fontFamily: "DMSans-Bold",
               fontDefinitions: [{ path: dmSansFonts.bold, weight: 700 }],
+            },
+            {
+              fontFamily: "JetBrainsMono-Regular",
+              fontDefinitions: [{ path: jetBrainsMonoFonts.regular, weight: 400 }],
+            },
+            {
+              fontFamily: "JetBrainsMono-Medium",
+              fontDefinitions: [{ path: jetBrainsMonoFonts.medium, weight: 500 }],
+            },
+            {
+              fontFamily: "JetBrainsMono-Bold",
+              fontDefinitions: [{ path: jetBrainsMonoFonts.bold, weight: 700 }],
             },
           ],
         },

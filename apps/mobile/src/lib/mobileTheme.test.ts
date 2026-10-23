@@ -24,6 +24,7 @@ import {
   getMobileThemeVariables,
   normalizeMobileThemeId,
   normalizeMobileThemeMode,
+  resolveMobileThemeAppearance,
   resolveMobileThemeIds,
   themeColorWithAlpha,
   themeColorToNativeColor,
@@ -353,6 +354,14 @@ describe("mobile themes", () => {
       accent: themeColorToNativeColor(desktopOcean.colors.accent),
       messageAction: themeColorToNativeColor(desktopOcean.colors.messageAction),
     });
+  });
+
+  it("forces dark-only themes to the dark appearance", () => {
+    expect(resolveMobileThemeAppearance("city", "light")).toBe("dark");
+    expect(resolveMobileThemeAppearance("city", "dark")).toBe("dark");
+    expect(resolveMobileThemeAppearance("t3-code", "light")).toBe("light");
+    expect(resolveMobileThemeAppearance("material-you", "light")).toBe("light");
+    expect(resolveMobileThemeAppearance("iris", "dark")).toBe("dark");
   });
 
   it("normalizes persisted theme preferences", () => {

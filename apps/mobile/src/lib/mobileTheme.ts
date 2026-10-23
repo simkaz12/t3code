@@ -15,9 +15,11 @@ import {
   type ThemePreviewColors,
 } from "@t3tools/shared/themePreview";
 
+import { CITY_THEME_COLORS } from "./cityTheme";
+
 export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
-export const MOBILE_THEME_IDS = [...SHARED_MOBILE_THEME_IDS, "material-you"] as const;
-export type MobileThemeId = SharedMobileThemeId | "material-you";
+export const MOBILE_THEME_IDS = [...SHARED_MOBILE_THEME_IDS, "material-you", "city"] as const;
+export type MobileThemeId = SharedMobileThemeId | "material-you" | "city";
 export type MobileThemeAppearance = ThemeAppearance;
 export type MobileThemeMode = MobileThemeAppearance | "system";
 export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeId>>;
@@ -28,8 +30,18 @@ export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
 }> = [
   { id: DEFAULT_MOBILE_THEME_ID, label: "T3 Code" },
   { id: "material-you", label: "Material You" },
+  { id: "city", label: "City 783" },
   ...BUILT_IN_THEMES.map((theme) => ({ id: theme.id as MobileThemeId, label: theme.label })),
 ];
+
+const DARK_ONLY_THEME_IDS: ReadonlySet<MobileThemeId> = new Set<MobileThemeId>(["city"]);
+
+export function resolveMobileThemeAppearance(
+  themeId: MobileThemeId,
+  requested: MobileThemeAppearance,
+): MobileThemeAppearance {
+  return DARK_ONLY_THEME_IDS.has(themeId) ? "dark" : requested;
+}
 
 export type MobileThemeVariable = keyof ReturnType<typeof createMobileThemeVariables>;
 export type MobileThemeVariables = Readonly<Record<MobileThemeVariable, string>>;
@@ -369,18 +381,19 @@ export const MOBILE_THEME_VARIABLE_NAMES = Object.keys(
 ) as ReadonlyArray<MobileThemeVariable>;
 
 export function getMobileThemeColors(
-  themeId: SharedMobileThemeId,
+  themeId: SharedMobileThemeId | "city",
   appearance: MobileThemeAppearance,
 ): ThemeColors {
   if (themeId === DEFAULT_MOBILE_THEME_ID) {
     return appearance === "dark" ? T3_CODE_DARK_THEME_COLORS : T3_CODE_LIGHT_THEME_COLORS;
   }
+  if (themeId === "city") return CITY_THEME_COLORS;
   const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? T3_CHAT_THEME;
   return getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
 }
 
 export function getMobileThemeVariables(
-  themeId: SharedMobileThemeId,
+  themeId: SharedMobileThemeId | "city",
   appearance: MobileThemeAppearance,
   overrides: Partial<MobileThemeVariables> | null = null,
 ): MobileThemeVariables {
@@ -428,8 +441,7 @@ export function getMobileThemePreviewColors(
 ): ThemePreviewColors {
   if (themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you")
     return STANDARD_THEME_PREVIEW_COLORS[appearance];
-  const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? T3_CHAT_THEME;
-  const colors = getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
+  const colors = getMobileThemeColors(themeId, appearance);
   return {
     canvas: themeColorToNativeColor(colors.canvas),
     accent: themeColorToNativeColor(colors.accent),
