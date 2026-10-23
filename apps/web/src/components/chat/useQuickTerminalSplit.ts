@@ -15,6 +15,7 @@ import { useSidebar } from "../ui/sidebar";
 type TerminalActions = ReturnType<typeof useThreadTerminalActions>;
 
 const terminalIds = new Map<string, string>();
+const pendingLaunches = new Map<string, Promise<unknown>>();
 
 type QuickTerminalLayout = {
   readonly threadRef: ScopedThreadRef;
@@ -26,6 +27,26 @@ type QuickTerminalLayout = {
   readonly terminalId: string;
   readonly setSidebarOpen: (open: boolean) => void;
   readonly setWidth: (width: number) => void;
+};
+
+type QuickTerminalOpenInput = {
+  readonly threadRef: ScopedThreadRef | null;
+  readonly enabled: boolean;
+  readonly sidebarOpen: boolean;
+  readonly width: number;
+  readonly setSidebarOpen: (open: boolean) => void;
+  readonly setWidth: (width: number) => void;
+  readonly launchTerminal: TerminalActions["launchTerminal"];
+  readonly focusTerminal: () => void;
+};
+
+type QuickTerminalToggleInput = QuickTerminalOpenInput & {
+  readonly focusComposer: () => void;
+};
+
+type QuickTerminalOpenResult = {
+  readonly terminalId: string;
+  readonly result: Promise<unknown> | null;
 };
 
 export function createQuickTerminalSplit(onActiveChange: (threadKey: string | null) => void) {
@@ -48,62 +69,72 @@ export function createQuickTerminalSplit(onActiveChange: (threadKey: string | nu
     return true;
   };
 
+  const ensureOpen = (input: QuickTerminalOpenInput): QuickTerminalOpenResult | null => {
+    const { threadRef } = input;
+    if (layout) {
+      input.focusTerminal();
+      return {
+        terminalId: layout.terminalId,
+        result: pendingLaunches.get(layout.terminalId) ?? null,
+      };
+    }
+    if (!input.enabled || !threadRef) return null;
+    const threadKey = scopedThreadKey(threadRef);
+    const store = useRightPanelStore.getState();
+    const panel = selectThreadRightPanelState(store.byThreadKey, threadRef);
+    let terminalId = terminalIds.get(threadKey);
+    let result: Promise<unknown> | null = null;
+    const existing = panel.surfaces.find(
+      (surface) => surface.kind === "terminal" && surface.terminalIds.includes(terminalId ?? ""),
+    );
+    if (!existing) {
+      const launched = input.launchTerminal({
+        place: (id) => useRightPanelStore.getState().openTerminal(threadRef, id),
+      });
+      if (!launched) return null;
+      terminalId = launched.terminalId;
+      terminalIds.set(threadKey, terminalId);
+      const launchedId = terminalId;
+      const clearPending = () => {
+        if (pendingLaunches.get(launchedId) === launched.result) pendingLaunches.delete(launchedId);
+      };
+      pendingLaunches.set(launchedId, launched.result);
+      void launched.result.then(clearPending, clearPending);
+      result = launched.result;
+    } else if (terminalId !== undefined) {
+      store.activateTerminal(threadRef, existing.id, terminalId);
+      store.show(threadRef);
+      result = pendingLaunches.get(terminalId) ?? null;
+    }
+    if (terminalId === undefined) return null;
+    layout = {
+      threadRef,
+      sidebarOpen: input.sidebarOpen,
+      panelOpen: panel.isOpen,
+      surfaceId: panel.activeSurfaceId,
+      maximized: panel.maximized === true,
+      width: input.width,
+      terminalId,
+      setSidebarOpen: input.setSidebarOpen,
+      setWidth: input.setWidth,
+    };
+    store.setMaximized(threadRef, false);
+    input.setSidebarOpen(false);
+    onActiveChange(threadKey);
+    input.focusTerminal();
+    return { terminalId, result };
+  };
+
   return {
     restore,
-    toggle(input: {
-      readonly threadRef: ScopedThreadRef | null;
-      readonly enabled: boolean;
-      readonly sidebarOpen: boolean;
-      readonly width: number;
-      readonly setSidebarOpen: (open: boolean) => void;
-      readonly setWidth: (width: number) => void;
-      readonly launchTerminal: TerminalActions["launchTerminal"];
-      readonly focusTerminal: () => void;
-      readonly focusComposer: () => void;
-    }) {
-      const { threadRef } = input;
+    ensureOpen,
+    toggle(input: QuickTerminalToggleInput) {
       if (layout) {
         restore();
         input.focusComposer();
         return true;
       }
-      if (!input.enabled || !threadRef) return false;
-      const threadKey = scopedThreadKey(threadRef);
-      const store = useRightPanelStore.getState();
-      const panel = selectThreadRightPanelState(store.byThreadKey, threadRef);
-      let terminalId = terminalIds.get(threadKey);
-      const existing = panel.surfaces.find(
-        (surface) => surface.kind === "terminal" && surface.terminalIds.includes(terminalId ?? ""),
-      );
-      if (!existing) {
-        const launched = input.launchTerminal({
-          place: (id) => useRightPanelStore.getState().openTerminal(threadRef, id),
-        });
-        if (!launched) return false;
-        terminalId = launched.terminalId;
-        terminalIds.set(threadKey, terminalId);
-        void launched.result;
-      } else if (terminalId !== undefined) {
-        store.activateTerminal(threadRef, existing.id, terminalId);
-        store.show(threadRef);
-      }
-      if (terminalId === undefined) return false;
-      layout = {
-        threadRef,
-        sidebarOpen: input.sidebarOpen,
-        panelOpen: panel.isOpen,
-        surfaceId: panel.activeSurfaceId,
-        maximized: panel.maximized === true,
-        width: input.width,
-        terminalId,
-        setSidebarOpen: input.setSidebarOpen,
-        setWidth: input.setWidth,
-      };
-      store.setMaximized(threadRef, false);
-      input.setSidebarOpen(false);
-      onActiveChange(threadKey);
-      input.focusTerminal();
-      return true;
+      return ensureOpen(input) !== null;
     },
     reconcile(
       threadRef: ScopedThreadRef | null,
@@ -163,19 +194,20 @@ export function useQuickTerminalSplit(input: {
     [controller],
   );
 
+  const openInput = () => ({
+    threadRef: input.threadRef,
+    enabled: input.enabled,
+    sidebarOpen,
+    width: inlineSize.width,
+    setSidebarOpen,
+    setWidth: inlineSize.setWidth,
+    launchTerminal: input.terminalActions.launchTerminal,
+    focusTerminal: input.focusTerminal,
+  });
   const toggle = useStableCallback(() =>
-    controller.toggle({
-      threadRef: input.threadRef,
-      enabled: input.enabled,
-      sidebarOpen,
-      width: inlineSize.width,
-      setSidebarOpen,
-      setWidth: inlineSize.setWidth,
-      launchTerminal: input.terminalActions.launchTerminal,
-      focusTerminal: input.focusTerminal,
-      focusComposer: input.focusComposer,
-    }),
+    controller.toggle({ ...openInput(), focusComposer: input.focusComposer }),
   );
+  const ensureOpen = useStableCallback(() => controller.ensureOpen(openInput()));
 
-  return { inlineSize, toggle };
+  return { inlineSize, toggle, ensureOpen };
 }
