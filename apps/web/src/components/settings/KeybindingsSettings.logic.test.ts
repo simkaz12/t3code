@@ -40,6 +40,24 @@ describe("KeybindingsSettings.logic", () => {
     expect(buildKeybindingCommandOptions([])).toContain("terminal.quickToggle");
   });
 
+  it("lists the run selection default as an editable row", () => {
+    const rows = filterKeybindingRows(
+      buildKeybindingRows(DEFAULT_RESOLVED_KEYBINDINGS),
+      "run selection",
+    );
+
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        command: "chat.runSelection",
+        key: "enter",
+        defaultKey: "enter",
+        source: "Default",
+      }),
+    );
+    expect(commandLabel("chat.runSelection")).toBe("Run selection in terminal");
+    expect(buildKeybindingCommandOptions([])).toContain("chat.runSelection");
+  });
+
   it("lists composer, provider, and pull request commands with editable defaults", () => {
     const rows = buildKeybindingRows(DEFAULT_RESOLVED_KEYBINDINGS);
     for (const command of [

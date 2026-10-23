@@ -728,6 +728,30 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
+  it("routes Enter to chat.runSelection only outside editable and terminal focus", () => {
+    const input = event({ key: "Enter" });
+    const resolve = (context: Record<string, boolean>, bindings = DEFAULT_RESOLVED_KEYBINDINGS) =>
+      resolveChatShortcutCommand(input, bindings, [], { platform: "Linux", context });
+
+    assert.strictEqual(
+      resolve({ editableFocus: false, terminalFocus: false }),
+      "chat.runSelection",
+    );
+    assert.isNull(resolve({ editableFocus: true, terminalFocus: false }));
+    assert.isNull(resolve({ editableFocus: false, terminalFocus: true }));
+
+    const remapped = mergeWithDefaultKeybindings(
+      compileResolvedKeybindingsConfig([{ key: "ctrl+enter", command: "chat.runSelection" }]),
+    );
+    assert.strictEqual(
+      resolveChatShortcutCommand(event({ key: "Enter", ctrlKey: true }), remapped, [], {
+        platform: "Linux",
+        context: { editableFocus: false, terminalFocus: false },
+      }),
+      "chat.runSelection",
+    );
+  });
+
   it("matches chat.new shortcut", () => {
     assert.strictEqual(
       resolveShortcutCommand(event({ key: "o", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
