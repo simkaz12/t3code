@@ -227,6 +227,7 @@ import { settleAndAdvance } from "../settleAndAdvance";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { FileMetadataThreadProvider } from "../hooks/FileMetadataThreadProvider";
+import { useAssistantSelectionRunStore } from "./chat/assistantSelectionRun";
 import { useQuickTerminalSplit } from "./chat/useQuickTerminalSplit";
 import {
   RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
@@ -3634,7 +3635,7 @@ export default function ChatView(props: ChatViewProps) {
   useLayoutEffect(() => {
     runProjectScriptRef.current = runProjectScriptStable;
   }, [runProjectScriptStable]);
-  const runShellCommand = (command: string) => {
+  const runShellCommandInDrawer = (command: string) => {
     void runProjectScriptRef.current(
       {
         id: "chat-code-block",
@@ -3646,7 +3647,7 @@ export default function ChatView(props: ChatViewProps) {
       { rememberAsLastInvoked: false, shellHistory: "preserve" },
     );
   };
-  const runShellCommandStable = useStableCallback(runShellCommand);
+  const runShellCommandInDrawerStable = useStableCallback(runShellCommandInDrawer);
 
   const {
     saveProjectScript: saveProjectScriptStable,
@@ -3859,17 +3860,49 @@ export default function ChatView(props: ChatViewProps) {
     void launched.result;
   };
   const addTerminalSurfaceStable = useStableCallback(addTerminalSurface);
-  const { inlineSize: previewPanelInlineSize, toggle: toggleQuickTerminal } = useQuickTerminalSplit(
-    {
-      threadRef: activeThreadRef,
-      enabled: !shouldUsePlanSidebarSheet && activeProject !== null && canOperateTerminal,
-      container: workspaceLayoutElement,
-      panelState: rightPanelState,
-      terminalActions,
-      focusTerminal: () => setTerminalFocusRequestId((value) => value + 1),
-      focusComposer: focusComposerStable,
-    },
-  );
+  const {
+    inlineSize: previewPanelInlineSize,
+    toggle: toggleQuickTerminal,
+    ensureOpen: ensureQuickTerminal,
+  } = useQuickTerminalSplit({
+    threadRef: activeThreadRef,
+    enabled: !shouldUsePlanSidebarSheet && activeProject !== null && canOperateTerminal,
+    container: workspaceLayoutElement,
+    panelState: rightPanelState,
+    terminalActions,
+    focusTerminal: () => setTerminalFocusRequestId((value) => value + 1),
+    focusComposer: focusComposerStable,
+  });
+  const readActiveThreadKeyStable = useStableCallback(() => activeThreadKey);
+  const runInQuickTerminal = (command: string) => {
+    const opened = ensureQuickTerminal();
+    if (!opened) {
+      runShellCommandInDrawerStable(command);
+      return true;
+    }
+
+    const originThreadKey = activeThreadKey;
+    const originThreadId = activeThreadId;
+    void (async () => {
+      if (opened.result) await opened.result;
+      if (readActiveThreadKeyStable() !== originThreadKey) return;
+      const writeResult = await terminalActions.writeToTerminal(opened.terminalId, `${command}\r`);
+      if (writeResult?._tag === "Failure" && !isAtomCommandInterrupted(writeResult)) {
+        const error = squashAtomCommandFailure(writeResult);
+        if (originThreadId && readActiveThreadKeyStable() === originThreadKey) {
+          setThreadError(
+            originThreadId,
+            error instanceof Error ? error.message : "Failed to run the command in the terminal.",
+          );
+        }
+        return;
+      }
+      if (readActiveThreadKeyStable() !== originThreadKey) return;
+      setTerminalFocusRequestId((value) => value + 1);
+    })();
+    return true;
+  };
+  const runInQuickTerminalStable = useStableCallback(runInQuickTerminal);
   const splitPanelTerminal = (direction: "horizontal" | "vertical" = "horizontal") => {
     if (
       !activeThreadRef ||
@@ -5809,6 +5842,17 @@ export default function ChatView(props: ChatViewProps) {
       "terminal.quickToggle": ({ event }) => {
         if (event.repeat) return;
         return toggleQuickTerminal();
+      },
+      "chat.runSelection": ({ event }) => {
+        if (event.repeat) return false;
+        const pending = useAssistantSelectionRunStore.getState().pending;
+        if (pending === null) return false;
+        if ((event.target as Element | null)?.closest?.("[data-assistant-selection-toolbar]")) {
+          return false;
+        }
+        if (!runInQuickTerminalStable(pending)) return false;
+        useAssistantSelectionRunStore.getState().setPending(null);
+        window.getSelection()?.removeAllRanges();
       },
       "chat.find": () => {
         if (!isServerThread || serverConfig?.threadFind !== true) return false;
@@ -8204,7 +8248,10 @@ export default function ChatView(props: ChatViewProps) {
                 {...(!paintOnlyDisplayedTimeline
                   ? {
                       onCiteAssistantText: citeAssistantTextStable,
-                      ...(activeProject ? { onRunShellCommand: runShellCommandStable } : {}),
+                      ...(activeProject ? { onRunShellCommand: runInQuickTerminalStable } : {}),
+                      ...(canOperateTerminal && activeProject
+                        ? { onRunAssistantSelection: runInQuickTerminalStable }
+                        : {}),
                     }
                   : {})}
                 isWorking={!paintOnlyDisplayedTimeline && isWorking}
