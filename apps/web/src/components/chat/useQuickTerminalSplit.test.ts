@@ -191,4 +191,79 @@ describe("quick terminal split", () => {
     expect(test.focusTerminal).not.toHaveBeenCalled();
     expect(panel().surfaces).toHaveLength(0);
   });
+
+  it("ensureOpen reuses the open terminal and launches once", () => {
+    const test = setup();
+
+    const first = test.controller.ensureOpen(test.input());
+    const second = test.controller.ensureOpen(test.input());
+
+    expect(first).toMatchObject({ terminalId: "quick-1" });
+    expect(first?.result).toBeInstanceOf(Promise);
+    expect(second).toEqual({ terminalId: "quick-1", result: first?.result });
+    expect(test.launchTerminal).toHaveBeenCalledOnce();
+    expect(test.focusTerminal).toHaveBeenCalledTimes(2);
+  });
+
+  it("ensureOpen returns the same pending launch until it settles", async () => {
+    let resolveLaunch: (value: unknown) => void = () => undefined;
+    const launch = new Promise<unknown>((resolve) => {
+      resolveLaunch = resolve;
+    });
+    const test = setup();
+    const launchTerminal = vi.fn((input: Parameters<ToggleInput["launchTerminal"]>[0]) => {
+      input.place("quick-1");
+      return { terminalId: "quick-1", result: launch as never };
+    });
+
+    const first = test.controller.ensureOpen(test.input({ launchTerminal }));
+    const second = test.controller.ensureOpen(test.input({ launchTerminal }));
+
+    expect(first?.result).toBe(launch);
+    expect(second?.result).toBe(launch);
+
+    resolveLaunch(undefined);
+    await launch;
+    await Promise.resolve();
+
+    expect(test.controller.ensureOpen(test.input({ launchTerminal }))).toEqual({
+      terminalId: "quick-1",
+      result: null,
+    });
+    expect(launchTerminal).toHaveBeenCalledOnce();
+  });
+
+  it("clears the pending launch when it rejects", async () => {
+    const launch = Promise.reject(new Error("launch failed"));
+    const test = setup();
+    const launchTerminal = vi.fn((input: Parameters<ToggleInput["launchTerminal"]>[0]) => {
+      input.place("quick-1");
+      return { terminalId: "quick-1", result: launch as never };
+    });
+
+    test.controller.ensureOpen(test.input({ launchTerminal }));
+    await launch.catch(() => undefined);
+    await Promise.resolve();
+
+    expect(test.controller.ensureOpen(test.input({ launchTerminal }))?.result).toBeNull();
+  });
+
+  it("toggle after ensureOpen restores the layout", () => {
+    const test = setup();
+    test.controller.ensureOpen(test.input());
+
+    expect(test.controller.toggle(test.input())).toBe(true);
+
+    expect(test.setSidebarOpen).toHaveBeenLastCalledWith(true);
+    expect(test.focusComposer).toHaveBeenCalledOnce();
+    expect(test.controller.restore()).toBe(false);
+  });
+
+  it("ensureOpen returns null when disabled or the launch fails", () => {
+    const test = setup();
+
+    expect(test.controller.ensureOpen(test.input({ enabled: false }))).toBeNull();
+    expect(test.controller.ensureOpen(test.input({ launchTerminal: () => null }))).toBeNull();
+    expect(test.focusTerminal).not.toHaveBeenCalled();
+  });
 });
