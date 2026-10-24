@@ -407,6 +407,7 @@ import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { createUpwardScrollDetector, isTimelineScrollTarget } from "./chat/timelineScrollTarget";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { ArtifactModalHost, openArtifactModal } from "./chat/ArtifactModal";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import {
   BranchRestoreConfirmHost,
@@ -2723,8 +2724,7 @@ export default function ChatView(props: ChatViewProps) {
   const downloadFileAttachmentStable = useStableCallback(downloadFileAttachment);
   const openFileAttachment = (attachment: ChatFileAttachment) => {
     if (activeThreadRef) {
-      useRightPanelStore.getState().openAttachment(activeThreadRef, attachment);
-      return;
+      openArtifactModal(routeThreadKey, { kind: "attachment", attachment });
     }
   };
   const openFileAttachmentStable = useStableCallback(openFileAttachment);
@@ -7942,10 +7942,14 @@ export default function ChatView(props: ChatViewProps) {
   const onExpandTimelineImageStable = useStableCallback(onExpandTimelineImage);
   const onOpenTurnDiff = (runId: RunId, filePath?: string) => {
     if (!isServerThread || !activeThreadRef) return;
+    if (filePath !== undefined) {
+      openArtifactModal(routeThreadKey, { kind: "file", path: filePath, runId });
+      return;
+    }
     const diffOpen =
       selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, activeThreadRef) === "diff";
     explicitDiffOpenRef.current = diffOpen ? null : activeThreadRef;
-    useDiffPanelStore.getState().selectTurn(activeThreadRef, runId, filePath);
+    useDiffPanelStore.getState().selectTurn(activeThreadRef, runId);
     useRightPanelStore.getState().open(activeThreadRef, "diff");
     onDiffPanelOpen?.();
   };
@@ -8943,6 +8947,12 @@ export default function ChatView(props: ChatViewProps) {
       <LinkPullRequestDialogHost />
       <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
+      <ArtifactModalHost
+        threadKey={routeThreadKey}
+        workspaceRoot={activeWorkspaceRoot ?? null}
+        draft={typeof composerDraftTarget === "string"}
+        workspaceMutationId={workspaceMutationId}
+      />
     </div>
   );
   return (
