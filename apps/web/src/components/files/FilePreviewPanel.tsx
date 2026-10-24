@@ -16,9 +16,7 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import {
   DEFAULT_TOKENIZE_MAX_LENGTH,
-  VirtualizedFile,
   getFiletypeFromFileName,
-  type File as FileInstance,
   type FileContents,
   type PostRenderPhase,
   type SelectedLineRange,
@@ -47,7 +45,6 @@ import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPre
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
-import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
 import { MorphIcon } from "~/components/MorphIcon";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
@@ -92,7 +89,6 @@ import {
 } from "./fileCommentAnnotations";
 import { installFileEditorDismissal } from "./fileEditorDismissal";
 import {
-  FILE_LINK_REVEAL_ATTRIBUTE,
   FILE_LINK_REVEAL_UNSAFE_CSS,
   FILE_SURFACE_SUBHEADER_CLASS,
   FileSurfaceAction,
@@ -100,7 +96,8 @@ import {
   FileSurfaceLoading,
 } from "./fileSurfaceChrome";
 import SourceFilePreview from "./ReadOnlySourcePreview";
-import { resolveCenteredFileLineScrollTop } from "./fileLineReveal";
+import { type FilePostRender, useFileLineReveal } from "./useFileLineReveal";
+import { WorkspaceImagePreview } from "./WorkspaceImagePreview";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { projectFileCacheKey } from "./fileContentRevision";
 import {
@@ -146,71 +143,6 @@ const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
 const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
 const RENDER_BROWSER_FILE_STORAGE_KEY = "t3code.renderBrowserFile";
 const RENDER_TABLE_STORAGE_KEY = "t3code.renderTable";
-type FilePostRender = <LAnnotation>(
-  fileContainer: HTMLElement,
-  instance: FileInstance<LAnnotation, undefined>,
-  phase: PostRenderPhase,
-) => void;
-
-function WorkspaceImagePreview(props: {
-  readonly environmentId: EnvironmentId;
-  readonly threadRef: ScopedThreadRef;
-  readonly draft: boolean;
-  readonly absolutePath: string;
-  readonly workspaceRoot: string;
-  readonly alt: string;
-  readonly workspaceMutationId: string | null;
-}) {
-  const resource = workspaceAssetResource({
-    kind: "workspace-file",
-    threadRef: props.threadRef,
-    draft: props.draft,
-    workspaceRoot: props.workspaceRoot,
-    absolutePath: props.absolutePath,
-  });
-  const assetUrl = useAssetUrlState(props.environmentId, resource);
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const revisionSuffix =
-    props.workspaceMutationId === null
-      ? ""
-      : `${assetUrl._tag === "Success" && assetUrl.url.includes("?") ? "&" : "?"}workspace-revision=${encodeURIComponent(props.workspaceMutationId)}`;
-  const imageUrl = assetUrl._tag === "Success" ? `${assetUrl.url}${revisionSuffix}` : null;
-  const actionsSource: MediaActionSource = {
-    kind: "image",
-    name: props.alt,
-    src: imageUrl,
-    reference: mediaFileReference(props.absolutePath, props.workspaceRoot),
-    asset: { environmentId: props.environmentId, resource },
-  };
-
-  if (assetUrl._tag === "Failure" || (imageUrl !== null && failedUrl === imageUrl)) {
-    return (
-      <MediaActions source={actionsSource}>
-        <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
-          Unable to load workspace image.
-        </div>
-      </MediaActions>
-    );
-  }
-
-  return assetUrl._tag === "Success" && imageUrl !== null ? (
-    // oxlint-disable-next-line t3code/require-centered-scroll-gutter -- The image is capped at max-h-full max-w-full, so this never scrolls.
-    <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
-      <MediaActions source={actionsSource}>
-        <img
-          className="max-h-full max-w-full object-contain"
-          src={imageUrl}
-          alt={props.alt}
-          onError={() => setFailedUrl(imageUrl)}
-        />
-      </MediaActions>
-    </div>
-  ) : (
-    <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-      <Spinner size="lg" />
-    </div>
-  );
-}
 
 /**
  * HTML runs in a sandboxed frame with an opaque origin, so a page cannot reach
@@ -361,215 +293,6 @@ function WorkspaceAudioPreview(props: {
   }
   if (url === null) return <FileSurfaceLoading />;
   return <AudioPreview src={url} name={props.name} onError={() => setFailedUrl(url)} />;
-}
-
-function clampFileLine(contents: string, requestedLine: number): number {
-  let lineCount = 1;
-  for (let index = 0; index < contents.length; index += 1) {
-    const character = contents.charCodeAt(index);
-    if (character === 10) {
-      lineCount += 1;
-    } else if (character === 13) {
-      lineCount += 1;
-      if (contents.charCodeAt(index + 1) === 10) index += 1;
-    }
-  }
-  return Math.min(Math.max(1, requestedLine), lineCount);
-}
-
-function updateFileLinkReveal(fileContainer: HTMLElement, line: number | null): void {
-  const root = fileContainer.shadowRoot ?? fileContainer;
-  for (const element of root.querySelectorAll<HTMLElement>(`[${FILE_LINK_REVEAL_ATTRIBUTE}]`)) {
-    element.removeAttribute(FILE_LINK_REVEAL_ATTRIBUTE);
-  }
-  if (line === null) return;
-
-  root
-    .querySelector<HTMLElement>(`[data-line="${line}"]`)
-    ?.setAttribute(FILE_LINK_REVEAL_ATTRIBUTE, "");
-  root
-    .querySelector<HTMLElement>(`[data-column-number="${line}"]`)
-    ?.setAttribute(FILE_LINK_REVEAL_ATTRIBUTE, "");
-}
-
-const REVEAL_MAX_ATTEMPTS = 30;
-/**
- * After scrolling to the target, hold it for a short window so late
- * programmatic scroll resets (editable-editor focus and state restoration)
- * cannot silently snap the file back to the top.
- */
-const REVEAL_GUARD_FRAMES = 20;
-const REVEAL_GUARD_TOLERANCE_PX = 2;
-
-interface FileRevealState {
-  frameId: number | null;
-  cancelGuard: (() => void) | null;
-  handledRequestId: number | null;
-  latestRequestId: number | null;
-}
-
-function useFileLineReveal(
-  relativePath: string | null,
-  revealLine: number | null,
-  revealRequestId: number,
-): FilePostRender {
-  const [revealStatesByPath] = useState(() => new Map<string, FileRevealState>());
-
-  return (fileContainer, instance, phase) => {
-    if (relativePath === null) return;
-
-    const existingState = revealStatesByPath.get(relativePath);
-    const state: FileRevealState = existingState ?? {
-      frameId: null,
-      cancelGuard: null,
-      handledRequestId: null,
-      latestRequestId: null,
-    };
-    if (!existingState) revealStatesByPath.set(relativePath, state);
-
-    const cancelPendingReveal = () => {
-      if (state.frameId !== null) {
-        cancelAnimationFrame(state.frameId);
-        state.frameId = null;
-      }
-      state.cancelGuard?.();
-    };
-
-    if (phase === "unmount") {
-      cancelPendingReveal();
-      return;
-    }
-
-    const contents = instance.file?.contents;
-    const targetLine =
-      revealLine === null || contents === undefined ? null : clampFileLine(contents, revealLine);
-    updateFileLinkReveal(fileContainer, targetLine);
-
-    if (!(instance instanceof VirtualizedFile)) return;
-
-    if (state.latestRequestId !== revealRequestId) {
-      cancelPendingReveal();
-      state.latestRequestId = revealRequestId;
-      state.handledRequestId = null;
-    }
-
-    if (revealLine === null) {
-      fileContainer.style.minHeight = "";
-      return;
-    }
-
-    const scrollContainer = fileContainer.closest<HTMLElement>(".file-preview-virtualizer");
-    if (!scrollContainer) return;
-    fileContainer.style.minHeight = `${Math.ceil(
-      Math.max(instance.height, scrollContainer.clientHeight),
-    )}px`;
-
-    if (state.handledRequestId === revealRequestId || state.frameId !== null) {
-      return;
-    }
-
-    const resolveScrollTarget = (line: number): number | null => {
-      const linePosition = instance.getLinePosition(line);
-      if (!linePosition) return null;
-
-      const scrollContainerRect = scrollContainer.getBoundingClientRect();
-      const fileTop =
-        scrollContainer.scrollTop +
-        fileContainer.getBoundingClientRect().top -
-        scrollContainerRect.top;
-      const root = fileContainer.shadowRoot ?? fileContainer;
-      const renderedLineElement = root.querySelector<HTMLElement>(`[data-line="${line}"]`);
-      const renderedLineRect = renderedLineElement?.getBoundingClientRect();
-
-      return resolveCenteredFileLineScrollTop({
-        scrollTop: scrollContainer.scrollTop,
-        scrollHeight: scrollContainer.scrollHeight,
-        viewportTop: scrollContainerRect.top,
-        viewportHeight: scrollContainer.clientHeight,
-        fileTop,
-        estimatedLine: linePosition,
-        ...(renderedLineRect && renderedLineRect.height > 0
-          ? {
-              renderedLine: {
-                top: renderedLineRect.top,
-                height: renderedLineRect.height,
-              },
-            }
-          : {}),
-      });
-    };
-
-    const guardScrollTarget = (line: number) => {
-      let framesLeft = REVEAL_GUARD_FRAMES;
-      let guardFrameId: number | null = null;
-      const cancelGuard = () => {
-        if (guardFrameId !== null) {
-          cancelAnimationFrame(guardFrameId);
-          guardFrameId = null;
-        }
-        scrollContainer.removeEventListener("wheel", cancelGuard);
-        scrollContainer.removeEventListener("touchstart", cancelGuard);
-        scrollContainer.removeEventListener("pointerdown", cancelGuard, true);
-        window.removeEventListener("keydown", cancelGuard, true);
-        if (state.cancelGuard === cancelGuard) state.cancelGuard = null;
-      };
-      scrollContainer.addEventListener("wheel", cancelGuard, { passive: true });
-      scrollContainer.addEventListener("touchstart", cancelGuard, { passive: true });
-      // Pierre stops gutter pointer events from bubbling. Listen in capture
-      // so starting a comment cancels the reveal guard before the row expands.
-      scrollContainer.addEventListener("pointerdown", cancelGuard, {
-        passive: true,
-        capture: true,
-      });
-      window.addEventListener("keydown", cancelGuard, true);
-      const holdTarget = () => {
-        guardFrameId = null;
-        framesLeft -= 1;
-        if (framesLeft <= 0 || !scrollContainer.isConnected) {
-          cancelGuard();
-          return;
-        }
-        const targetTop = resolveScrollTarget(line);
-        if (
-          targetTop !== null &&
-          Math.abs(scrollContainer.scrollTop - targetTop) > REVEAL_GUARD_TOLERANCE_PX
-        ) {
-          scrollContainer.scrollTop = targetTop;
-        }
-        guardFrameId = requestAnimationFrame(holdTarget);
-      };
-      guardFrameId = requestAnimationFrame(holdTarget);
-      state.cancelGuard = cancelGuard;
-    };
-
-    const scheduleReveal = (attempt: number) => {
-      state.frameId = requestAnimationFrame(() => {
-        state.frameId = null;
-        if (state.latestRequestId !== revealRequestId || !fileContainer.isConnected) {
-          return;
-        }
-
-        // Contents and line metrics can lag the first post-render on fresh
-        // mounts; clamping against missing contents would scroll to line 1
-        // and wrongly mark the request handled.
-        const currentContents = instance.file?.contents;
-        const line =
-          currentContents === undefined ? null : clampFileLine(currentContents, revealLine);
-        const targetTop = line === null ? null : resolveScrollTarget(line);
-        if (line === null || targetTop === null) {
-          if (attempt < REVEAL_MAX_ATTEMPTS) scheduleReveal(attempt + 1);
-          return;
-        }
-        updateFileLinkReveal(fileContainer, line);
-
-        scrollContainer.scrollTop = targetTop;
-        state.handledRequestId = revealRequestId;
-        guardScrollTarget(line);
-      });
-    };
-
-    scheduleReveal(0);
-  };
 }
 
 const createFileEditor: EditorFactory<FileCommentAnnotationGroup, undefined> = (
