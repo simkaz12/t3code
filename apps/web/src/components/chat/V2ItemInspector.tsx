@@ -28,6 +28,7 @@ import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
 import { RenderErrorBoundary } from "../RenderErrorBoundary";
 import { CommandOutputPanel, useCommandOutputStreaming } from "./CommandOutputPanel";
 import { resolveExternalWebLinkHref } from "./externalLinkContextMenu";
+import type { ArtifactOpenHandler } from "./artifactModalMode";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ShellCommandBlock } from "./ShellCommandBlock";
 
@@ -43,6 +44,7 @@ interface V2ItemInspectorProps {
     readonly scopeId: string;
   }) => void;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  readonly onOpenArtifact?: ArtifactOpenHandler | undefined;
 }
 
 function SyntaxTokens({
@@ -153,6 +155,7 @@ interface ToolOutputState {
   readonly error: string | null;
   readonly empty: boolean;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  readonly onOpenArtifact?: ArtifactOpenHandler | undefined;
 }
 
 function ToolOutput(props: ToolOutputState) {
@@ -164,6 +167,7 @@ function ToolOutput(props: ToolOutputState) {
       alt="Tool output image"
       maxHeightRem={16}
       onImageExpand={props.onImageExpand}
+      onOpenArtifact={props.onOpenArtifact}
     />
   ));
   const text = props.output ? (
@@ -187,11 +191,16 @@ export function FetchedToolOutput(props: {
   readonly projectedItem: OrchestrationV2ProjectedTurnItem;
   readonly environmentId: EnvironmentId;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  readonly onOpenArtifact?: ArtifactOpenHandler | undefined;
 }) {
   const { output } = useFetchedTurnItem(props.projectedItem, props.environmentId);
   return (
     <div className={cn("mt-1.5 space-y-1.5", monoClassName)}>
-      <ToolOutput {...output} onImageExpand={props.onImageExpand} />
+      <ToolOutput
+        {...output}
+        onImageExpand={props.onImageExpand}
+        onOpenArtifact={props.onOpenArtifact}
+      />
     </div>
   );
 }
@@ -258,6 +267,7 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
               threadId: props.projectedItem.sourceThreadId,
             }}
             lineBreaks
+            onOpenArtifact={props.onOpenArtifact}
           />
         </div>
       ) : null}
@@ -268,6 +278,7 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
           exitCode={item.exitCode}
           {...outputState}
           onImageExpand={props.onImageExpand}
+          onOpenArtifact={props.onOpenArtifact}
           outputSlot={
             streamsOutput ? (
               <CommandOutputPanel
@@ -380,6 +391,7 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
           args={item.input}
           {...outputState}
           onImageExpand={props.onImageExpand}
+          onOpenArtifact={props.onOpenArtifact}
         />
       ) : null}
 

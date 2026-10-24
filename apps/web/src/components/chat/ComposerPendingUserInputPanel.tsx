@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type RuntimeRequestId, type ScopedThreadRef } from "@t3tools/contracts";
 import { memo, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useStableCallback } from "~/hooks/useStableCallback";
@@ -11,6 +12,7 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collaps
 import { cn } from "~/lib/utils";
 import { ComposerBanner } from "./ComposerBanner";
 import ChatMarkdown from "../ChatMarkdown";
+import { artifactOpener } from "./ArtifactModal";
 
 interface PendingUserInputPanelProps {
   pendingUserInputs: PendingUserInput[];
@@ -82,6 +84,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   onDismiss: (requestId: RuntimeRequestId) => void;
 }) {
   // Message-mode requests remain answerable after their provider turn ends.
+  const openArtifact = artifactOpener(scopedThreadKey(threadRef));
   const canRespond = prompt.responseCapability !== "not_resumable";
   const responseDisabled = disabled || isResponding || !canRespond;
   const autoAdvanceTimerRef = useRef<number | null>(null);
@@ -261,6 +264,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
               cwd={cwd}
               threadRef={threadRef}
               className="text-foreground/85"
+              onOpenArtifact={openArtifact}
             />
             {activeQuestion.multiSelect ? (
               <p className="mt-1 text-secondary-label text-xs">Select one or more options.</p>
@@ -340,6 +344,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                   cwd={cwd}
                   threadRef={threadRef}
                   parseRawHtml={false}
+                  onOpenArtifact={openArtifact}
                 />
               </section>
             ) : null}

@@ -883,7 +883,7 @@ describe("MessagesTimeline messages", () => {
     );
     expect(text()).toContain("1 changed file");
     await click(button("Open diff"));
-    expect(onOpenTurnDiff).toHaveBeenCalledWith(runId, "README.md");
+    expect(onOpenTurnDiff).toHaveBeenCalledWith(runId);
   });
 });
 
