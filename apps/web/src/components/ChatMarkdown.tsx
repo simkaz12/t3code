@@ -126,6 +126,7 @@ import {
   type ExpandedImagePreview,
 } from "./chat/ExpandedImagePreview";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
+import type { ArtifactOpenHandler } from "./chat/artifactModalMode";
 import { markdownImageGallery, markdownImageItems } from "./chat/markdownImageGallery";
 import { MediaVideoPlayer } from "./media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "./media/MediaActions";
@@ -261,6 +262,7 @@ interface ChatMarkdownProps {
   imageBaseDir?: string | undefined;
   workspaceMutationId?: string | null | undefined;
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  onOpenArtifact?: ArtifactOpenHandler | undefined;
   extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
   renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
   /** Loads GitHub-hosted media through `cwd`'s GitHub credential, which a private repository's
@@ -1604,6 +1606,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   readonly workspaceRoot?: string | undefined;
   readonly workspaceMutationId?: string | null | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  readonly onOpenArtifact?: ArtifactOpenHandler | undefined;
 }) {
   const assetUrl = useAssetUrlState(props.environmentId, props.resource);
   const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, props.resource);
@@ -1682,12 +1685,14 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     ...(relativePath && (resource._tag === "media-file" || resource._tag === "workspace-file")
       ? {
           onOpenFile: () =>
-            useRightPanelStore
-              .getState()
-              .openFile(
-                { environmentId: props.environmentId, threadId: resource.threadId },
-                relativePath,
-              ),
+            props.onOpenArtifact
+              ? props.onOpenArtifact({ path: relativePath })
+              : useRightPanelStore
+                  .getState()
+                  .openFile(
+                    { environmentId: props.environmentId, threadId: resource.threadId },
+                    relativePath,
+                  ),
         }
       : {}),
   };
@@ -2380,6 +2385,7 @@ function useChatMarkdownState({
   imageBaseDir,
   workspaceMutationId,
   onImageExpand,
+  onOpenArtifact,
   renderContextReference,
   headingLevelOffset = 0,
   githubMedia = false,
@@ -2459,7 +2465,10 @@ function useChatMarkdownState({
         environmentId === null ? undefined : readPreparedConnection(environmentId)?.httpBaseUrl,
       createAssetUrl,
       onOpenFile: threadRef
-        ? (path) => useRightPanelStore.getState().openFile(threadRef, path)
+        ? (path) =>
+            onOpenArtifact
+              ? onOpenArtifact({ path })
+              : useRightPanelStore.getState().openFile(threadRef, path)
         : undefined,
     }).then(
       (preview) => {
@@ -2719,7 +2728,9 @@ function useChatMarkdownState({
     // in flight.
     const isLatestLookup = claimWorkspaceBasenameLookup();
     const openAt = (path: string) =>
-      useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line);
+      onOpenArtifact
+        ? onOpenArtifact({ path, line: fileLinkMeta.line })
+        : useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line);
     if (
       fileLinkMeta.workspaceLookupPath === null ||
       !cwd ||
@@ -2831,6 +2842,7 @@ function useChatMarkdownState({
     linkTargetPreference,
     markdownFileLinkMetaByHref,
     onTaskListChange,
+    onOpenArtifact,
     onUseArtifactTemplate,
     onRunShellCommand,
     openChangeRequestLink,
@@ -3285,6 +3297,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       threadRef,
       workspaceMutationId,
       renderContextReference,
+      onOpenArtifact,
     } = use(ChatMarkdownRendererContext);
     const imageExpand = use(MarkdownLinkContext) ? undefined : expandMedia;
     const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
@@ -3397,6 +3410,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           workspaceRoot={cwd}
           workspaceMutationId={workspaceMutationId}
           onImageExpand={imageExpand}
+          onOpenArtifact={onOpenArtifact}
         />
       );
     }

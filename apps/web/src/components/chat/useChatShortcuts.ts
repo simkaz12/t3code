@@ -8,6 +8,7 @@ import {
   preventTerminalCloseShortcut,
 } from "../../lib/terminalCloseShortcut";
 import { getTerminalFocusOwner, type TerminalFocusOwner } from "../../lib/terminalFocus";
+import { isArtifactModalReservedChord } from "./artifactModalKeys";
 import { shouldTypeToFocusComposer } from "./composerFocusRedirect";
 
 /** Runs a command. Returning false lets the key event through untouched. */
@@ -30,6 +31,17 @@ export interface ChatShortcutsInput {
   readonly commands: Partial<Record<KeybindingCommand, ChatShortcutHandler>>;
   /** Handles commands not in `commands`, such as project scripts. */
   readonly fallback: (command: KeybindingCommand) => ChatShortcutHandler | undefined;
+}
+
+export function isArtifactModalOwnedKey(
+  event: Pick<KeyboardEvent, "target" | "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+  platform: string = navigator.platform,
+): boolean {
+  const target = event.target as Element | null;
+  return (
+    target?.closest?.("[data-artifact-modal]") != null &&
+    isArtifactModalReservedChord(event, platform)
+  );
 }
 
 /**
@@ -56,6 +68,7 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
         return;
       }
       if (!current.enabled || isCommandPaletteOpen()) return;
+      if (isArtifactModalOwnedKey(event)) return;
       const terminalFocusOwner = getTerminalFocusOwner();
       if (event.defaultPrevented && terminalFocusOwner === null) return;
       const shortcutContext = current.getShortcutContext(event.target);

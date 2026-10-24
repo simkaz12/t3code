@@ -10,6 +10,8 @@ const DIALOG_POPUP_BASE_CLASS =
 const DIALOG_POPUP_CLASS = `dialog-glass surface-clip ${DIALOG_POPUP_BASE_CLASS} rounded-2xl border`;
 const DIALOG_MEDIA_POPUP_CLASS = `${DIALOG_POPUP_BASE_CLASS} max-h-[92vh] w-auto max-w-[92vw] overflow-visible rounded-none border border-transparent bg-transparent p-0 shadow-none`;
 
+const DIALOG_VIEWER_POPUP_CLASS = `${DIALOG_POPUP_CLASS} row-start-1 h-[92vh] max-h-[calc(100vh-var(--native-titlebar-height,0px)-2rem)] w-[92vw] max-w-[92vw] overflow-hidden p-0`;
+
 const DIALOG_MOBILE_SHEET_CLASS =
   "max-sm:max-w-none max-sm:[clip-path:none] max-sm:rounded-none max-sm:border-x-0 max-sm:border-t max-sm:border-b-0 max-sm:opacity-[calc(1-min(var(--nested-dialogs),1))] max-sm:data-ending-style:translate-y-4 max-sm:data-starting-style:translate-y-4";
 
@@ -19,4 +21,5 @@ export {
   DIALOG_MOBILE_SHEET_CLASS,
   DIALOG_POPUP_CLASS,
   DIALOG_MEDIA_POPUP_CLASS,
+  DIALOG_VIEWER_POPUP_CLASS,
 };

@@ -1,4 +1,5 @@
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { memo, useState, useId } from "react";
 import { findRevealRef } from "./markdownFindContext";
 import {
@@ -8,6 +9,7 @@ import {
 import {
   AuthFilesystemWriteScope,
   type EnvironmentId,
+  type RunId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
@@ -17,6 +19,7 @@ import {
   normalizePlanMarkdownForExport,
 } from "../../proposedPlan";
 import ChatMarkdown from "../ChatMarkdown";
+import { artifactOpener } from "./ArtifactModal";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -42,6 +45,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   planMarkdown,
   environmentId,
   threadRef,
+  runId,
   cwd,
   workspaceRoot,
   findActive = false,
@@ -49,11 +53,13 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   planMarkdown: string;
   environmentId: EnvironmentId;
   threadRef?: ScopedThreadRef | undefined;
+  runId?: RunId | null | undefined;
   cwd: string | undefined;
   workspaceRoot: string | undefined;
   findActive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const openArtifact = threadRef ? artifactOpener(scopedThreadKey(threadRef), runId) : undefined;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   // The path last submitted, so reopening the dialog offers it again.
@@ -204,6 +210,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
               threadRef={threadRef}
               isStreaming={false}
               headingLevelOffset={3}
+              onOpenArtifact={openArtifact}
             />
           ) : (
             <ChatMarkdown
@@ -213,6 +220,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
               threadRef={threadRef}
               isStreaming={false}
               headingLevelOffset={3}
+              onOpenArtifact={openArtifact}
             />
           )}
           {isCollapsed ? (

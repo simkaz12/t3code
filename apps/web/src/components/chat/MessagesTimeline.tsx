@@ -9,7 +9,6 @@ import { WorkLogBlock, WorkLogButton, WorkLogDetails, WorkLogList, WorkLogRow } 
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
-import { useRightPanelStore } from "~/rightPanelStore";
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
@@ -304,6 +303,8 @@ import { WorkflowOpeningBlock } from "./WorkflowOpeningBlock";
 import { SkillChipIcon } from "./SkillInlineText";
 import * as DateTime from "effect/DateTime";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import { artifactOpener } from "./ArtifactModal";
+import type { ArtifactOpenHandler } from "./artifactModalMode";
 import { forwardWheelToTimeline } from "./timelineMinimapWheel";
 import {
   buildReviewCommentRenderablePatch,
@@ -370,6 +371,11 @@ interface TimelineRowActivityState {
 
 const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
 const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
+
+function useTimelineArtifactOpener(runId?: RunId | null): ArtifactOpenHandler {
+  const { routeThreadKey } = use(TimelineRowCtx);
+  return artifactOpener(routeThreadKey, runId);
+}
 
 interface WorkGroupViewState {
   scrollPositions: Map<string, WorkGroupScrollAnchor>;
@@ -2683,6 +2689,7 @@ function AttemptFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "at
 
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const openArtifact = useTimelineArtifactOpener(row.message.runId);
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
 
   return (
@@ -2708,6 +2715,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               onUseArtifactTemplate={ctx.onUseArtifactTemplate}
               onRunShellCommand={ctx.onRunShellCommand}
               onImageExpand={ctx.onImageExpand}
+              onOpenArtifact={openArtifact}
             />
           </AssistantCitationSource>
         </div>
@@ -2885,6 +2893,7 @@ function ProposedPlanTimelineRow({
         planMarkdown={row.proposedPlan.planMarkdown}
         environmentId={ctx.activeThreadEnvironmentId}
         threadRef={ctx.threadRef ?? undefined}
+        runId={row.proposedPlan.runId}
         cwd={ctx.markdownCwd}
         workspaceRoot={ctx.workspaceRoot}
         findActive={ctx.findActive}
@@ -3018,6 +3027,7 @@ function v2EventPresentation(item: OrchestrationV2TurnItem): {
 
 function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event" }> }) {
   const ctx = use(TimelineRowCtx);
+  const openArtifact = useTimelineArtifactOpener();
   const { item, visibility, sourceThreadId } = row.projectedItem;
   if (item.type === "subagent" && (row.subagents?.length ?? 1) > 1) {
     return <V2SubagentGroup key={row.id} row={row} />;
@@ -3102,6 +3112,7 @@ function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event"
                 threadRef={ctx.threadRef ?? undefined}
                 skills={ctx.skills}
                 lineBreaks
+                onOpenArtifact={openArtifact}
               />
             </div>
           ) : null}
@@ -3120,6 +3131,7 @@ function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event"
               onOpenTurnDiff={ctx.onOpenTurnDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
+              onOpenArtifact={openArtifact}
             />
           </div>
         </div>
@@ -3177,6 +3189,7 @@ function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event"
                 threadRef={ctx.threadRef ?? undefined}
                 skills={ctx.skills}
                 lineBreaks
+                onOpenArtifact={openArtifact}
               />
             </div>
           ) : null}
@@ -3195,6 +3208,7 @@ function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event"
               onOpenTurnDiff={ctx.onOpenTurnDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
+              onOpenArtifact={openArtifact}
             />
           </div>
         </div>
@@ -4139,6 +4153,7 @@ function UserMessageMentionChip(props: {
   copyMarkdown: string;
 }) {
   const ctx = use(TimelineRowCtx);
+  const openArtifact = useTimelineArtifactOpener();
   return (
     <Tooltip>
       <TooltipTrigger
@@ -4148,10 +4163,7 @@ function UserMessageMentionChip(props: {
             render={<button type="button" />}
             aria-label={`Preview ${props.record.path}`}
             data-markdown-copy={props.copyMarkdown}
-            onClick={() => {
-              if (ctx.threadRef)
-                useRightPanelStore.getState().openFile(ctx.threadRef, props.record.path);
-            }}
+            onClick={() => openArtifact({ path: props.record.path })}
           >
             <WorkspaceEntryIcon
               path={props.record.path}
@@ -4690,6 +4702,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   markdownCwd: string | undefined;
 }) {
   const ctx = use(TimelineRowCtx);
+  const openArtifact = useTimelineArtifactOpener();
   if (props.text.length === 0) {
     return null;
   }
@@ -4704,6 +4717,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       parseRawHtml={false}
       renderContextReference={props.renderContextReference}
       headingLevelOffset={MESSAGE_HEADING_LEVEL}
+      onOpenArtifact={openArtifact}
     />
   );
 });
@@ -4711,6 +4725,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
 function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
   const renderedAppearance = useRenderedAppearance();
   const ctx = use(TimelineRowCtx);
+  const openArtifact = useTimelineArtifactOpener();
   const fenceLanguage = comment.fenceLanguage ?? "diff";
   const renderablePatch = getRenderablePatch(
     buildReviewCommentRenderablePatch(comment),
@@ -4745,6 +4760,7 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
           threadRef={ctx.threadRef ?? undefined}
           skills={ctx.skills}
           className="text-foreground"
+          onOpenArtifact={openArtifact}
         />
       )}
       {renderablePatch?.kind === "files" && (
@@ -5307,6 +5323,7 @@ function ReasoningTraceContent({ entries }: { entries: ReadonlyArray<TimelineWor
           headingLevelOffset={MESSAGE_HEADING_LEVEL}
           onUseArtifactTemplate={ctx.onUseArtifactTemplate}
           onImageExpand={ctx.onImageExpand}
+          onOpenArtifact={artifactOpener(ctx.routeThreadKey, entry.runId)}
           lineBreaks
         />
       ))}
@@ -5345,6 +5362,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEntryRowP
 function WorkEntryLogRow(props: WorkEntryRowProps) {
   const { workEntry, workspaceRoot, displayLabel } = props;
   const ctx = use(TimelineRowCtx);
+  const openArtifact = useTimelineArtifactOpener(workEntry.runId);
   const { threadRef, onImageExpand, timestampFormat } = ctx;
   const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;
   const threadTarget = useThreadReadTarget(workEntry, ctx.activeThreadEnvironmentId);
@@ -5683,6 +5701,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             workspaceRoot={workspaceRoot}
             maxHeightRem={16}
             onImageExpand={onImageExpand}
+            onOpenArtifact={openArtifact}
           />
         </WorkLogDetails>
       ) : null}
@@ -5708,6 +5727,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               onOpenTurnDiff={ctx.onOpenTurnDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
+              onOpenArtifact={openArtifact}
             />
           ) : (
             <>
@@ -5719,6 +5739,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                   projectedItem={workEntry.projectedItem}
                   environmentId={ctx.activeThreadEnvironmentId}
                   onImageExpand={onImageExpand}
+                  onOpenArtifact={openArtifact}
                 />
               ) : null}
             </>
