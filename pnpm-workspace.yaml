@@ -220,6 +220,9 @@ minimumReleaseAgeExclude:
   - "@expo/schema-utils@58.0.2"
 
 overrides:
+  # The staged desktop install resolves from the registry, so a newer node-pty beta
+  # leaves the pinned patch unused and fails the build. Upstream pins it the same way.
+  node-pty: 1.2.0-beta.15
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "1.8.0"
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.
