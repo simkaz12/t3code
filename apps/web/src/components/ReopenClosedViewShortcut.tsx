@@ -4,7 +4,7 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { AuthPreviewOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef } from "react";
 
@@ -33,6 +33,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { readProject, readThreadShell } from "../state/entities";
 import { previewEnvironment } from "../state/preview";
 import { primaryServerKeybindingsAtom } from "../state/server";
+import { useEnvironmentScope } from "../state/session";
 import { environmentShell } from "../state/shell";
 import { useAtomCommand } from "../state/use-atom-command";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -71,6 +72,10 @@ export function ReopenClosedViewShortcut() {
   );
   const previewOpen = useRightPanelStore(
     (state) => selectActiveRightPanel(state.byThreadKey, threadRef) === "preview",
+  );
+  const canOperatePreview = useEnvironmentScope(
+    threadRef?.environmentId ?? null,
+    AuthPreviewOperateScope,
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const hasHistory = useClosedViewStore((state) => state.entries.length > 0);
@@ -199,6 +204,7 @@ export function ReopenClosedViewShortcut() {
     const commands = [
       ...(hasHistory ? (["view.reopenClosed"] as const) : []),
       ...PREVIEW_FORWARDED_LAYOUT_COMMANDS,
+      ...(canOperatePreview ? (["preview.expand"] as const) : []),
     ];
     void preview
       .setForwardedShortcuts(
@@ -213,7 +219,7 @@ export function ReopenClosedViewShortcut() {
     return () => {
       void preview.setForwardedShortcuts?.([]).catch(() => undefined);
     };
-  }, [hasHistory, keybindings, terminalOpen]);
+  }, [canOperatePreview, hasHistory, keybindings, terminalOpen]);
 
   return null;
 }

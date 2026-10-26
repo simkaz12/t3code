@@ -99,9 +99,11 @@ export function agentControlledBrowserCloseConfirmation(
 export function shouldRenderPreviewMiniPlayer(
   source: PreviewMiniPlayerSource | null,
   renderedRightPanelSurface: RightPanelSurface | null,
+  expandedTabId: string | null = null,
 ): boolean {
   if (source === null) return false;
   if (source.kind === "browser") {
+    if (source.tabId === expandedTabId) return false;
     return !(
       renderedRightPanelSurface?.kind === "preview" &&
       renderedRightPanelSurface.resourceId === source.tabId
@@ -111,6 +113,18 @@ export function shouldRenderPreviewMiniPlayer(
     renderedRightPanelSurface?.kind === "device" &&
     renderedRightPanelSurface.target?.hostId === source.hostId &&
     renderedRightPanelSurface.target.deviceId === source.deviceId
+  );
+}
+
+export function shouldKeepPreviewExpanded(
+  expandedTabId: string,
+  source: PreviewMiniPlayerSource | null,
+  renderedRightPanelSurface: RightPanelSurface | null,
+): boolean {
+  return (
+    source?.kind === "browser" &&
+    source.tabId === expandedTabId &&
+    shouldRenderPreviewMiniPlayer(source, renderedRightPanelSurface)
   );
 }
 

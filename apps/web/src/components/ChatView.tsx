@@ -252,6 +252,11 @@ import { resolveDiscoveredServerUrl } from "../browser/browserTargetResolver";
 import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
+import { PreviewExpandedDialogHost } from "./preview/PreviewExpandedDialog";
+import {
+  selectThreadPreviewExpandedTabId,
+  usePreviewExpandedStore,
+} from "./preview/previewExpandedStore";
 import { usePreviewSession } from "./preview/usePreviewSession";
 import { subscribePreviewAction } from "./preview/previewActionBus";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
@@ -260,6 +265,7 @@ import {
   browserMiniPlayerSource,
   previewMiniPlayerSourceKey,
   selectThreadPreviewMiniPlayer,
+  selectThreadPreviewMiniPlayerTabId,
   usePreviewMiniPlayerStore,
 } from "../previewMiniPlayerStore";
 import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.logic";
@@ -504,6 +510,7 @@ import {
   shouldShowBranchMismatchBanner,
   shouldShowPlanFollowUpPrompt,
   shouldReleaseTimelineAnchorForToolActivity,
+  shouldKeepPreviewExpanded,
   shouldRenderPreviewMiniPlayer,
   getStartedThreadModelChangeBlockReason,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -1764,10 +1771,26 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
+  const activePreviewExpandedTabId = usePreviewExpandedStore((state) =>
+    selectThreadPreviewExpandedTabId(state.byThreadKey, activeThreadRef),
+  );
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
     activePreviewMiniPlayer?.source ?? null,
     renderedRightPanelSurface,
+    activePreviewExpandedTabId,
   );
+  const previewExpandedStillValid =
+    activePreviewExpandedTabId === null ||
+    shouldKeepPreviewExpanded(
+      activePreviewExpandedTabId,
+      activePreviewMiniPlayer?.source ?? null,
+      renderedRightPanelSurface,
+    );
+  useEffect(() => {
+    if (activeThreadRef && !previewExpandedStillValid) {
+      usePreviewExpandedStore.getState().collapse(activeThreadRef);
+    }
+  }, [activeThreadRef, previewExpandedStillValid]);
   const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const rightPanelMaximized = canMaximizeRightPanel && rightPanelState.maximized === true;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
@@ -4014,6 +4037,18 @@ export default function ChatView(props: ChatViewProps) {
     useRightPanelStore.getState().setMaximized(activeThreadRef, !rightPanelMaximized);
   };
   const toggleRightPanelMaximizedStable = useStableCallback(toggleRightPanelMaximized);
+  const togglePreviewExpanded = (repeat: boolean) => {
+    if (!activeThreadRef || !canOperatePreview) return false;
+    if (repeat) return;
+    const miniPlayerTabId = previewMiniPlayerVisible
+      ? selectThreadPreviewMiniPlayerTabId(
+          usePreviewMiniPlayerStore.getState().byThreadKey,
+          activeThreadRef,
+        )
+      : null;
+    return usePreviewExpandedStore.getState().toggle(activeThreadRef, miniPlayerTabId);
+  };
+  const togglePreviewExpandedStable = useStableCallback(togglePreviewExpanded);
   const {
     closeSurface: closeRightPanelSurface,
     closeOtherSurfaces: closeOtherRightPanelSurfacesStable,
@@ -5843,6 +5878,7 @@ export default function ChatView(props: ChatViewProps) {
         if (event.repeat) return;
         return toggleQuickTerminal();
       },
+      "preview.expand": ({ event }) => togglePreviewExpandedStable(event.repeat),
       "chat.runSelection": ({ event }) => {
         if (event.repeat) return false;
         const pending = useAssistantSelectionRunStore.getState().pending;
@@ -5949,8 +5985,9 @@ export default function ChatView(props: ChatViewProps) {
     return window.desktopBridge?.onMenuAction((action) => {
       if (action === "rightPanel.toggle") toggleRightPanelStable();
       else if (action === "rightPanel.toggleMaximized") toggleRightPanelMaximizedStable();
+      else if (action === "preview.expand") togglePreviewExpandedStable(false);
     });
-  }, [toggleRightPanelStable, toggleRightPanelMaximizedStable]);
+  }, [toggleRightPanelStable, toggleRightPanelMaximizedStable, togglePreviewExpandedStable]);
 
   // Paste-to-focus: the resting composer blurs on a click into the timeline,
   // so a paste that follows has no editable target and would be dropped.
@@ -8947,6 +8984,9 @@ export default function ChatView(props: ChatViewProps) {
       <LinkPullRequestDialogHost />
       <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
+      {canOperatePreview && activeThreadRef ? (
+        <PreviewExpandedDialogHost threadRef={activeThreadRef} />
+      ) : null}
       <ArtifactModalHost
         threadKey={routeThreadKey}
         workspaceRoot={activeWorkspaceRoot ?? null}

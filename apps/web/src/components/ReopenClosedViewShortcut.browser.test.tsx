@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   keybindings: [] as ResolvedKeybindingsConfig,
   params: {} as Record<string, string>,
   workspaceAvailable: true,
+  canOperatePreview: true,
   navigate: vi.fn(),
   openPreview: vi.fn(),
   setShortcuts: vi.fn(async () => undefined),
@@ -61,6 +62,10 @@ vi.mock(import("../state/shell"), async (original) => {
     environmentShell: { ...actual.environmentShell, stateValueAtom: (() => live) as never },
   };
 });
+vi.mock(import("../state/session"), async (original) => ({
+  ...(await original()),
+  useEnvironmentScope: (() => state.canOperatePreview) as never,
+}));
 vi.mock(import("../state/entities"), async (original) => ({
   ...(await original()),
   readThreadShell: (() => ({ projectId: "project-1", worktreePath: null })) as never,
@@ -118,6 +123,7 @@ beforeEach(() => {
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     params: {},
     workspaceAvailable: true,
+    canOperatePreview: true,
   });
   state.navigate.mockResolvedValue(undefined);
   state.openPreview.mockReset();
@@ -328,6 +334,20 @@ describe("root reopen shortcut", () => {
     expect(state.setShortcuts).toHaveBeenLastCalledWith([
       expect.objectContaining({ command: "sidebar.toggle" }),
       expect.objectContaining({ command: "rightPanel.toggle" }),
+      expect.objectContaining({ command: "preview.expand" }),
     ]);
+  });
+
+  it("forwards preview.expand only while the session may operate the preview", async () => {
+    const forwardedCommands = () =>
+      (state.setShortcuts.mock.lastCall as unknown as [Array<{ command: string }>])[0].map(
+        ({ command }) => command,
+      );
+    await render();
+    expect(forwardedCommands()).toContain("preview.expand");
+
+    state.canOperatePreview = false;
+    await act(() => root.render(<ReopenClosedViewShortcut />));
+    expect(forwardedCommands()).not.toContain("preview.expand");
   });
 });

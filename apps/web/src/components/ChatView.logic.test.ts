@@ -77,6 +77,7 @@ import {
   shouldOpenProactivePullRequest,
   shouldRetargetThreadPullRequestPanel,
   shouldOpenProactiveTurnDiff,
+  shouldKeepPreviewExpanded,
   shouldRenderPreviewMiniPlayer,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   branchMismatchKey,
@@ -952,6 +953,29 @@ describe("floating browser preview", () => {
         { id: "diff", kind: "diff" },
       ),
     ).toBe(true);
+  });
+});
+
+describe("expanded browser preview", () => {
+  const source = { kind: "browser", tabId: "tab-1" } as const;
+
+  it("hides the floating preview while its tab is enlarged", () => {
+    expect(shouldRenderPreviewMiniPlayer(source, null, "tab-1")).toBe(false);
+    expect(shouldRenderPreviewMiniPlayer(source, null, "tab-2")).toBe(true);
+    expect(shouldRenderPreviewMiniPlayer(source, null, null)).toBe(true);
+  });
+
+  it("keeps the modal only while the floating preview owns the same tab", () => {
+    expect(shouldKeepPreviewExpanded("tab-1", source, null)).toBe(true);
+    expect(shouldKeepPreviewExpanded("tab-2", source, null)).toBe(false);
+    expect(shouldKeepPreviewExpanded("tab-1", null, null)).toBe(false);
+    expect(
+      shouldKeepPreviewExpanded("tab-1", source, {
+        id: "browser:one",
+        kind: "preview",
+        resourceId: "tab-1",
+      }),
+    ).toBe(false);
   });
 });
 

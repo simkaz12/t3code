@@ -32,8 +32,13 @@ export interface BrowserSurfaceContentPresentation {
 interface BrowserSurfaceStoreState {
   readonly activityByTabId: Record<string, number>;
   readonly byTabId: Record<string, BrowserSurfacePresentation>;
+  readonly seededFitByTabId: Record<string, BrowserSurfaceContentPresentation>;
   readonly acquireActivity: (tabId: string) => () => void;
   readonly claim: (tabId: string, owner: symbol, fitSourceContent: boolean) => void;
+  readonly seedFittedSourceContent: (
+    tabId: string,
+    content: BrowserSurfaceContentPresentation,
+  ) => void;
   readonly present: (
     tabId: string,
     owner: symbol,
@@ -64,6 +69,13 @@ export function resolveBrowserSurfacePanelRect(
   return current?.rect ?? null;
 }
 
+export function resolveSavedFittedSourceContent(
+  state: Pick<BrowserSurfaceStoreState, "byTabId" | "seededFitByTabId">,
+  tabId: string,
+): BrowserSurfaceContentPresentation | null {
+  return state.seededFitByTabId[tabId] ?? state.byTabId[tabId]?.fittedSourceContent ?? null;
+}
+
 const rectEquals = (left: BrowserSurfaceRect | null, right: BrowserSurfaceRect): boolean =>
   left !== null &&
   left.x === right.x &&
@@ -74,6 +86,7 @@ const rectEquals = (left: BrowserSurfaceRect | null, right: BrowserSurfaceRect):
 export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) => ({
   activityByTabId: {},
   byTabId: {},
+  seededFitByTabId: {},
   acquireActivity: (tabId) => {
     let released = false;
     set((state) => ({
@@ -98,7 +111,9 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
     set((state) => {
       const current = state.byTabId[tabId];
       if (current?.owner === owner) return state;
+      const { [tabId]: seededFit, ...seededFitByTabId } = state.seededFitByTabId;
       return {
+        seededFitByTabId,
         byTabId: {
           ...state.byTabId,
           [tabId]: {
@@ -106,7 +121,9 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
             visible: false,
             zIndex: current?.zIndex ?? 30,
             content: current?.content ?? null,
-            fittedSourceContent: fitSourceContent ? (current?.content ?? null) : null,
+            fittedSourceContent: fitSourceContent
+              ? (seededFit ?? current?.fittedSourceContent ?? current?.content ?? null)
+              : null,
             fitSourceContent,
             cornerRadius: current?.cornerRadius ?? 0,
             updatedAt: Date.now(),
@@ -115,6 +132,8 @@ export const useBrowserSurfaceStore = create<BrowserSurfaceStoreState>()((set) =
         },
       };
     }),
+  seedFittedSourceContent: (tabId, content) =>
+    set((state) => ({ seededFitByTabId: { ...state.seededFitByTabId, [tabId]: content } })),
   present: (tabId, owner, rect, visible, cornerRadius, zIndex) =>
     set((state) => {
       const current = state.byTabId[tabId];
