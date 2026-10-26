@@ -45,15 +45,19 @@ const MINI_PLAYER_PRIMARY_SELECTOR = "[data-preview-mini-player-primary]";
 
 export function PreviewExpandedDialogHost(props: { readonly threadRef: ScopedThreadRef }) {
   const { threadRef } = props;
-  const tabId = usePreviewExpandedStore((state) =>
+  const expandedTabId = usePreviewExpandedStore((state) =>
     selectThreadPreviewExpandedTabId(state.byThreadKey, threadRef),
   );
-  if (tabId === null) return null;
+  const [retainedTabId, setRetainedTabId] = useState(expandedTabId);
+  if (expandedTabId !== null && expandedTabId !== retainedTabId) setRetainedTabId(expandedTabId);
+  if (retainedTabId === null) return null;
   return (
     <PreviewExpandedDialog
-      key={`${scopedThreadKey(threadRef)}:${tabId}`}
+      key={`${scopedThreadKey(threadRef)}:${retainedTabId}`}
       threadRef={threadRef}
-      tabId={tabId}
+      tabId={retainedTabId}
+      open={expandedTabId === retainedTabId}
+      onExited={() => setRetainedTabId(null)}
     />
   );
 }
@@ -61,8 +65,10 @@ export function PreviewExpandedDialogHost(props: { readonly threadRef: ScopedThr
 function PreviewExpandedDialog(props: {
   readonly threadRef: ScopedThreadRef;
   readonly tabId: string;
+  readonly open: boolean;
+  readonly onExited: () => void;
 }) {
-  const { threadRef, tabId } = props;
+  const { threadRef, tabId, open, onExited } = props;
   const httpBaseUrl = useEnvironmentHttpBaseUrl(threadRef.environmentId);
   const previewState = useThreadPreviewState(threadRef);
   const snapshot = previewState.sessions[tabId] ?? null;
@@ -83,15 +89,11 @@ function PreviewExpandedDialog(props: {
     content: resolveSavedFittedSourceContent(useBrowserSurfaceStore.getState(), runtimeTabId),
   }));
 
-  useLayoutEffect(
-    () => () => {
-      if (floatedSource.content === null) return;
-      useBrowserSurfaceStore
-        .getState()
-        .seedFittedSourceContent(floatedSource.runtimeTabId, floatedSource.content);
-    },
-    [floatedSource],
-  );
+  useLayoutEffect(() => {
+    const { content, runtimeTabId: seededTabId } = floatedSource;
+    if (!open || content === null) return;
+    return () => useBrowserSurfaceStore.getState().seedFittedSourceContent(seededTabId, content);
+  }, [floatedSource, open]);
 
   useEffect(
     () => () => {
@@ -150,11 +152,14 @@ function PreviewExpandedDialog(props: {
 
   return (
     <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) shrink();
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) shrink();
       }}
-      onOpenChangeComplete={() => setLayoutVersion((version) => version + 1)}
+      onOpenChangeComplete={(settledOpen) => {
+        if (settledOpen) setLayoutVersion((version) => version + 1);
+        else onExited();
+      }}
     >
       <DialogPopup
         {...composerFloatingLayerProps}
@@ -205,7 +210,7 @@ function PreviewExpandedDialog(props: {
           </DialogClose>
         </div>
         <div ref={bodyRef} className="relative min-h-0 flex-1 overflow-hidden bg-muted">
-          {serverTab ? (
+          {!open ? null : serverTab ? (
             <ServerBrowserSurface
               ref={serverSurfaceRef}
               environmentId={threadRef.environmentId}
@@ -288,7 +293,7 @@ function SlotAgentCursorLayer(props: {
       stopObserving();
       window.removeEventListener("resize", update);
     };
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The open transition scales the popup without resizing it, so a layoutVersion bump re-measures once it settles.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A layoutVersion bump re-measures the anchor once the open transition settles.
   }, [anchorRef, layoutVersion]);
 
   if (!rect) return null;

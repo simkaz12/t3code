@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef } from "react";
 
+import { fadeBrowserSurface } from "./browserSurfaceMotion";
 import { acquireBrowserSurface } from "./browserSurfaceStore";
 import { observeResize } from "../lib/observeResize";
 
@@ -13,6 +14,7 @@ export function BrowserSurfaceSlot(props: {
   readonly layoutVersion?: string | number;
   readonly className?: string;
   readonly fitSourceContent?: boolean;
+  readonly fade?: "in" | "out";
 }) {
   const {
     tabId,
@@ -22,6 +24,7 @@ export function BrowserSurfaceSlot(props: {
     layoutVersion,
     className,
     fitSourceContent = false,
+    fade,
   } = props;
   const elementRef = useRef<HTMLDivElement | null>(null);
   const presentationRef = useRef({ visible, cornerRadius, zIndex });
@@ -94,6 +97,10 @@ export function BrowserSurfaceSlot(props: {
     visible,
     zIndex,
   ]);
+
+  useLayoutEffect(() => {
+    if (fade) fadeBrowserSurface(tabId, fade);
+  }, [fade, tabId]);
 
   return <div ref={elementRef} className={className} data-browser-surface-slot={tabId} />;
 }

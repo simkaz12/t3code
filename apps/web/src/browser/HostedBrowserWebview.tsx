@@ -6,14 +6,19 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { useShallow } from "zustand/react/shallow";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { previewBridge } from "~/components/preview/previewBridge";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { cn, isMacPlatform } from "~/lib/utils";
 
-import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
+import { BROWSER_SURFACE_MOTION_MS, morphBrowserSurface } from "./browserSurfaceMotion";
+import {
+  type BrowserSurfaceRect,
+  resolveBrowserSurfacePanelRect,
+  useBrowserSurfaceStore,
+} from "./browserSurfaceStore";
 import { useActiveBrowserRecordingTabIds } from "./browserRecording";
 import {
   browserViewportSettingKey,
@@ -86,6 +91,11 @@ export function HostedBrowserWebview(props: {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<ElectronWebview | null>(null);
   const crashRecoveryRef = useRef<WebviewCrashRecoveryState>(INITIAL_WEBVIEW_CRASH_RECOVERY_STATE);
+  const handoffRef = useRef<{
+    rect: BrowserSurfaceRect;
+    owner: symbol | null;
+    inactiveSince: number | null;
+  } | null>(null);
   const [aspectRatioLocked, setAspectRatioLocked] = useState(false);
   const presentation = useBrowserSurfaceStore(
     useShallow((state) => {
@@ -95,6 +105,7 @@ export function HostedBrowserWebview(props: {
         cornerRadius: current?.cornerRadius ?? 0,
         fitSourceContent: current?.fitSourceContent ?? false,
         fittedSourceContent: current?.fittedSourceContent ?? null,
+        owner: current?.owner ?? null,
         rect: resolveBrowserSurfacePanelRect(state.byTabId, runtimeTabId),
         visible: current?.visible ?? false,
         zIndex: current?.zIndex ?? 30,
@@ -210,6 +221,25 @@ export function HostedBrowserWebview(props: {
 
   const active = presentation.visible && presentation.rect !== null;
   const lastRect = presentation.rect;
+  const owner = presentation.owner;
+
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    const previous = handoffRef.current;
+    if (!active || !lastRect) {
+      if (previous) previous.inactiveSince ??= performance.now();
+      wrapper?.getAnimations().forEach((animation) => animation.cancel());
+      return;
+    }
+
+    handoffRef.current = { rect: lastRect, owner, inactiveSince: null };
+    if (!wrapper || !previous || previous.owner === owner) return;
+
+    const idleMs = previous.inactiveSince === null ? 0 : performance.now() - previous.inactiveSince;
+    if (idleMs > BROWSER_SURFACE_MOTION_MS) return;
+    morphBrowserSurface(wrapper, previous.rect, lastRect);
+  }, [active, lastRect, owner]);
+
   const layoutZoomFactor = useBrowserLayoutZoomFactor(zoomFactor);
   const viewportWidth = viewport._tag === "fill" ? null : viewport.width;
   const viewportHeight = viewport._tag === "fill" ? null : viewport.height;
