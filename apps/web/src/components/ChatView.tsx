@@ -8985,7 +8985,7 @@ export default function ChatView(props: ChatViewProps) {
       <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
       {canOperatePreview && activeThreadRef ? (
-        <PreviewExpandedDialogHost threadRef={activeThreadRef} />
+        <PreviewExpandedDialogHost key={activeThreadKey} threadRef={activeThreadRef} />
       ) : null}
       <ArtifactModalHost
         threadKey={routeThreadKey}

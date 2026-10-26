@@ -206,6 +206,15 @@ describe("HostedBrowserWebview settings hydration", () => {
   });
 });
 
+function stubReducedMotion(reduced: boolean) {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: reduced && query.includes("prefers-reduced-motion"),
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
+}
+
 describe("HostedBrowserWebview viewport layout", () => {
   const runtimeTabId = "zoom-layout-tab";
   const owner = Symbol("panel");
@@ -242,6 +251,7 @@ describe("HostedBrowserWebview viewport layout", () => {
 
   it("keeps fixed viewports sized in guest pixels across host zoom and fitted surfaces", async () => {
     let windowZoom = 1.25;
+    stubReducedMotion(true);
     vi.stubGlobal("desktopBridge", { getWindowZoomFactor: () => windowZoom });
     useBrowserSurfaceStore.getState().claim(runtimeTabId, owner, false);
     useBrowserSurfaceStore.getState().present(runtimeTabId, owner, panel, true, 0, 30);
@@ -294,5 +304,53 @@ describe("HostedBrowserWebview viewport layout", () => {
     vi.stubGlobal("desktopBridge", undefined);
     await act(() => window.dispatchEvent(new Event("resize")));
     expect(guest.getBoundingClientRect()).toMatchObject({ width: 1200, height: 900 });
+  });
+  describe("surface handoff motion", () => {
+    const mini = { x: 40, y: 60, width: 400, height: 200 };
+
+    async function handOffToMiniPlayer() {
+      vi.stubGlobal("desktopBridge", {});
+      useBrowserSurfaceStore.getState().claim(runtimeTabId, owner, false);
+      useBrowserSurfaceStore.getState().present(runtimeTabId, owner, panel, true, 0, 30);
+      await renderViewport(FILL_PREVIEW_VIEWPORT);
+      const wrapper = container.querySelector<HTMLElement>(
+        `[data-preview-viewport="${runtimeTabId}"]`,
+      );
+      expect(wrapper?.getAnimations()).toHaveLength(0);
+
+      const miniPlayer = Symbol("mini-player");
+      await act(() => {
+        useBrowserSurfaceStore.getState().release(runtimeTabId, owner);
+        useBrowserSurfaceStore.getState().claim(runtimeTabId, miniPlayer, true);
+        useBrowserSurfaceStore.getState().present(runtimeTabId, miniPlayer, mini, true, 0, 48);
+      });
+      return { wrapper: wrapper!, miniPlayer };
+    }
+
+    it("glides from the previous owner's rect and not on a same-owner move", async () => {
+      stubReducedMotion(false);
+      const { wrapper, miniPlayer } = await handOffToMiniPlayer();
+
+      const glides = wrapper.getAnimations();
+      expect(glides).toHaveLength(1);
+      expect((glides[0]!.effect as KeyframeEffect).getKeyframes()[0]).toMatchObject({
+        transform: "translate(-40px, -60px) scale(5, 8)",
+      });
+
+      glides[0]!.finish();
+      await act(() =>
+        useBrowserSurfaceStore
+          .getState()
+          .present(runtimeTabId, miniPlayer, { ...mini, x: 80 }, true, 0, 48),
+      );
+      expect(wrapper.getAnimations()).toHaveLength(0);
+    });
+
+    it("snaps to the new owner's rect under reduced motion", async () => {
+      stubReducedMotion(true);
+      const { wrapper } = await handOffToMiniPlayer();
+
+      expect(wrapper.getAnimations()).toHaveLength(0);
+    });
   });
 });

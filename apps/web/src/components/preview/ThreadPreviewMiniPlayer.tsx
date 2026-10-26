@@ -19,6 +19,7 @@ import {
   findActiveBrowserRecordingRuntimeTabId,
   useActiveBrowserRecordingTabIds,
 } from "~/browser/browserRecording";
+import { BROWSER_SURFACE_MOTION_MS } from "~/browser/browserSurfaceMotion";
 import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
 import type { BrowserViewportResizeDirection } from "~/browser/browserViewportLayout";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
@@ -42,9 +43,11 @@ import {
   type PreviewMiniPlayerSource,
   type PreviewMiniPlayerState,
   previewMiniPlayerSourceKey,
+  selectThreadPreviewMiniPlayer,
   usePreviewMiniPlayerStore,
 } from "~/previewMiniPlayerStore";
 import { useRightPanelStore } from "~/rightPanelStore";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { useDeviceState } from "~/state/device";
 
 import { DeviceStreamView } from "../device/DeviceStreamView";
@@ -76,6 +79,11 @@ interface PointerGesture {
 }
 
 const HANDLE_TAP_SLOP_PX = 6;
+const miniPlayerFade = (closing: boolean) =>
+  cn(
+    "transition-opacity duration-200 ease-out starting:opacity-0 motion-reduce:transition-none",
+    closing && "opacity-0",
+  );
 
 interface MiniPlayerPrimaryAction {
   readonly label: string;
@@ -231,10 +239,13 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
         ) : null
       }
     >
-      {(frame) =>
+      {(frame, closing) =>
         serverTab ? (
           <div
-            className="pointer-events-auto absolute inset-0 overflow-hidden rounded-[inherit]"
+            className={cn(
+              "pointer-events-auto absolute inset-0 overflow-hidden rounded-[inherit]",
+              miniPlayerFade(closing),
+            )}
             style={{ zIndex: PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX }}
           >
             <ServerBrowserSurface
@@ -259,6 +270,7 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
               cornerRadius={PREVIEW_MINI_PLAYER_CORNER_RADIUS}
               zIndex={PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX}
               fitSourceContent
+              fade={closing ? "out" : "in"}
               layoutVersion={`${frame.x}:${frame.y}`}
               className="absolute inset-0"
             />
@@ -314,9 +326,12 @@ function DeviceMiniPlayer({
       }}
       cornerRadius={cornerRadius}
     >
-      {() => (
+      {(_frame, closing) => (
         <div
-          className="pointer-events-auto absolute inset-0 overflow-hidden rounded-[inherit]"
+          className={cn(
+            "pointer-events-auto absolute inset-0 overflow-hidden rounded-[inherit]",
+            miniPlayerFade(closing),
+          )}
           style={{ zIndex: PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX }}
         >
           <DeviceStreamView
@@ -358,13 +373,15 @@ function MiniPlayerShell({
   readonly pillActions?: ReactNode;
   readonly recording?: boolean;
   readonly cornerRadius?: (frame: PreviewMiniPlayerSize) => number;
-  readonly children: (frame: PreviewMiniPlayerFrame) => ReactNode;
+  readonly children: (frame: PreviewMiniPlayerFrame, closing: boolean) => ReactNode;
 }) {
   const canvas = useChatCanvas();
   const gestureRef = useRef<PointerGesture | null>(null);
   // Touch has no hover, so tapping the handle toggles the pill instead. The
   // toggle waits for the tap's click, which would otherwise land on the pill.
   const [pillOpen, setPillOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const handleTappedRef = useRef(false);
   const handleRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -406,7 +423,20 @@ function MiniPlayerShell({
   const pillInset = Math.max(8, Math.round(radius * 0.55));
 
   const close = () => {
-    usePreviewMiniPlayerStore.getState().close(threadRef);
+    if (closing) return;
+    if (reducedMotion || !frame) {
+      usePreviewMiniPlayerStore.getState().close(threadRef);
+      return;
+    }
+
+    setClosing(true);
+    window.setTimeout(() => {
+      const { byThreadKey } = usePreviewMiniPlayerStore.getState();
+      const current = selectThreadPreviewMiniPlayer(byThreadKey, threadRef);
+      if (current && previewMiniPlayerSourceKey(current.source) === sourceKey) {
+        usePreviewMiniPlayerStore.getState().close(threadRef);
+      }
+    }, BROWSER_SURFACE_MOTION_MS);
   };
 
   const beginGesture = (
@@ -491,7 +521,10 @@ function MiniPlayerShell({
           <div
             ref={handleRef}
             data-pill-open={pillOpen ? "" : undefined}
-            className="group pointer-events-auto absolute z-[49] size-3 touch-none cursor-grab active:cursor-grabbing pointer-coarse:-m-2.5 pointer-coarse:size-8"
+            className={cn(
+              "group pointer-events-auto absolute z-[49] size-3 touch-none cursor-grab active:cursor-grabbing pointer-coarse:-m-2.5 pointer-coarse:size-8",
+              miniPlayerFade(closing),
+            )}
             style={{ right: pillInset, top: pillInset }}
             onPointerDown={(event) => beginGesture(event, null)}
             onPointerMove={handlePointerMove}
@@ -561,9 +594,19 @@ function MiniPlayerShell({
             </div>
           </div>
 
-          <div className="absolute inset-0 z-[47] rounded-[inherit] bg-muted shadow-2xl/35" />
-          {children(frame)}
-          <div className="pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-1 ring-inset ring-border/80" />
+          <div
+            className={cn(
+              "absolute inset-0 z-[47] rounded-[inherit] bg-muted shadow-2xl/35",
+              miniPlayerFade(closing),
+            )}
+          />
+          {children(frame, closing)}
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-0 z-[49] rounded-[inherit] ring-1 ring-inset ring-border/80",
+              miniPlayerFade(closing),
+            )}
+          />
           {RESIZE_HANDLES.map(({ direction, className }) => (
             <div
               key={direction}
