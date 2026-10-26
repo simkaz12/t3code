@@ -3,7 +3,7 @@
 import { FILL_PREVIEW_VIEWPORT, type ScopedThreadRef } from "@t3tools/contracts";
 import { previewPdfAssetUrl } from "@t3tools/shared/preview";
 import { useEnvironmentHttpBaseUrl } from "~/state/environments";
-import { PanelRightIcon, PictureInPicture2, XIcon } from "lucide-react";
+import { Maximize2, PanelRightIcon, PictureInPicture2, XIcon } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -51,6 +51,7 @@ import { DeviceStreamView } from "../device/DeviceStreamView";
 import type { DeviceScreenSize } from "@t3tools/client-runtime/device/stream";
 import type { PreviewStreamViewport } from "@t3tools/client-runtime/preview/server-browser-stream";
 import { previewBridge } from "./previewBridge";
+import { usePreviewExpandedStore } from "./previewExpandedStore";
 import { showPreviewPopup } from "./showPreviewPopup";
 import {
   clampPreviewMiniPlayerPosition,
@@ -75,6 +76,13 @@ interface PointerGesture {
 }
 
 const HANDLE_TAP_SLOP_PX = 6;
+
+interface MiniPlayerPrimaryAction {
+  readonly label: string;
+  readonly tooltip: string;
+  readonly icon: ReactNode;
+  readonly onClick: () => void;
+}
 
 interface Props {
   readonly threadRef: ScopedThreadRef;
@@ -145,9 +153,8 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
           layoutZoomFactor,
         );
 
-  const openInPanel = () => {
-    usePreviewMiniPlayerStore.getState().close(threadRef);
-    useRightPanelStore.getState().openBrowser(threadRef, tabId);
+  const enlarge = () => {
+    usePreviewExpandedStore.getState().expand(threadRef, tabId);
   };
 
   const toggleNativePictureInPicture = async () => {
@@ -192,7 +199,12 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
       sourceSize={sourceSize}
       label="Floating browser preview"
       recording={recording}
-      onOpenInPanel={openInPanel}
+      primaryAction={{
+        label: "Enlarge preview",
+        tooltip: "Enlarge preview",
+        icon: <Maximize2 />,
+        onClick: enlarge,
+      }}
       pillActions={
         canPopOut ? (
           <Tooltip>
@@ -294,7 +306,12 @@ function DeviceMiniPlayer({
       miniPlayer={miniPlayer}
       sourceSize={sourceSize}
       label="Floating device preview"
-      onOpenInPanel={openInPanel}
+      primaryAction={{
+        label: "Open preview in right panel",
+        tooltip: "Open in right panel",
+        icon: <PanelRightIcon />,
+        onClick: openInPanel,
+      }}
       cornerRadius={cornerRadius}
     >
       {() => (
@@ -327,7 +344,7 @@ function MiniPlayerShell({
   miniPlayer,
   sourceSize,
   label,
-  onOpenInPanel,
+  primaryAction,
   pillActions,
   recording = false,
   cornerRadius = frameCornerRadius,
@@ -337,7 +354,7 @@ function MiniPlayerShell({
   readonly miniPlayer: PreviewMiniPlayerState;
   readonly sourceSize: PreviewMiniPlayerSize;
   readonly label: string;
-  readonly onOpenInPanel: () => void;
+  readonly primaryAction: MiniPlayerPrimaryAction;
   readonly pillActions?: ReactNode;
   readonly recording?: boolean;
   readonly cornerRadius?: (frame: PreviewMiniPlayerSize) => number;
@@ -513,15 +530,16 @@ function MiniPlayerShell({
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      aria-label="Open preview in right panel"
+                      aria-label={primaryAction.label}
+                      data-preview-mini-player-primary=""
                       onPointerDown={(event) => event.stopPropagation()}
-                      onClick={onOpenInPanel}
+                      onClick={primaryAction.onClick}
                     />
                   }
                 >
-                  <PanelRightIcon />
+                  {primaryAction.icon}
                 </TooltipTrigger>
-                <TooltipPopup side="top">Open in right panel</TooltipPopup>
+                <TooltipPopup side="top">{primaryAction.tooltip}</TooltipPopup>
               </Tooltip>
               {pillActions}
               <Tooltip>
