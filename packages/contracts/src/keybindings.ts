@@ -75,6 +75,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "pullRequest.copyNumber",
   "diff.toggle",
   "preview.toggle",
+  "preview.expand",
   "preview.refresh",
   "preview.focusUrl",
   "preview.zoomIn",
