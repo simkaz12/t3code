@@ -40,6 +40,22 @@ describe("KeybindingsSettings.logic", () => {
     expect(buildKeybindingCommandOptions([])).toContain("terminal.quickToggle");
   });
 
+  it("lists the preview enlarge default as an editable row", () => {
+    const rows = filterKeybindingRows(buildKeybindingRows(DEFAULT_RESOLVED_KEYBINDINGS), "enlarge");
+
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        command: "preview.expand",
+        key: "mod+alt+e",
+        defaultKey: "mod+alt+e",
+        source: "Default",
+        conflicts: [],
+      }),
+    );
+    expect(commandLabel("preview.expand")).toBe("Preview: Enlarge or Shrink");
+    expect(buildKeybindingCommandOptions([])).toContain("preview.expand");
+  });
+
   it("lists the run selection default as an editable row", () => {
     const rows = filterKeybindingRows(
       buildKeybindingRows(DEFAULT_RESOLVED_KEYBINDINGS),

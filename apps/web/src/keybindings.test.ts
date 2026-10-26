@@ -728,6 +728,21 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
+  it.each([
+    [false, "preview.expand"],
+    [true, null],
+  ])("routes the preview enlarge default with terminal focus %s", (terminalFocus, expected) => {
+    const input = event({ key: "e", ctrlKey: true, altKey: true });
+
+    assert.strictEqual(
+      resolveChatShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, [], {
+        platform: "Linux",
+        context: { terminalFocus },
+      }),
+      expected,
+    );
+  });
+
   it("routes Enter to chat.runSelection only outside editable and terminal focus", () => {
     const input = event({ key: "Enter" });
     const resolve = (context: Record<string, boolean>, bindings = DEFAULT_RESOLVED_KEYBINDINGS) =>

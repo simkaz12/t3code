@@ -4,6 +4,7 @@ import {
   acquireBrowserSurface,
   acquireBrowserSurfaceActivity,
   resolveBrowserSurfacePanelRect,
+  resolveSavedFittedSourceContent,
   useBrowserSurfaceStore,
 } from "./browserSurfaceStore";
 
@@ -196,5 +197,140 @@ describe("browserSurfaceStore", () => {
       owner: null,
       visible: false,
     });
+  });
+
+  it("returns a fitted lease to the source size it had before a full-size lease took the tab", () => {
+    const tabId = "enlarged-browser-surface";
+    const floatedContent = {
+      x: 0,
+      y: 0,
+      width: 640,
+      height: 400,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    };
+    const enlargedContent = { ...floatedContent, width: 1_178, height: 670 };
+    const store = useBrowserSurfaceStore;
+    const floatedLease = acquireBrowserSurface(tabId, true);
+    store.getState().presentContent(tabId, floatedContent);
+    const floated = store.getState().byTabId[tabId]?.fittedSourceContent ?? null;
+
+    floatedLease.release();
+    const enlargedLease = acquireBrowserSurface(tabId);
+    store.getState().presentContent(tabId, enlargedContent);
+    store.getState().seedFittedSourceContent(tabId, floated ?? floatedContent);
+    enlargedLease.release();
+    const restored = acquireBrowserSurface(tabId, true);
+
+    expect(store.getState().byTabId[tabId]?.fittedSourceContent).toEqual(floatedContent);
+    restored.release();
+  });
+
+  it("keeps the mini player fit across a dialog unmount and remount before shrinking", () => {
+    const tabId = "thread-switch-browser-surface";
+    const floatedContent = {
+      x: 0,
+      y: 0,
+      width: 640,
+      height: 400,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    };
+    const enlargedContent = { ...floatedContent, width: 1_178, height: 670 };
+    const store = useBrowserSurfaceStore;
+    const miniLease = acquireBrowserSurface(tabId, true);
+    store.getState().presentContent(tabId, floatedContent);
+    const firstMount = resolveSavedFittedSourceContent(store.getState(), tabId);
+
+    miniLease.release();
+    const firstDialogLease = acquireBrowserSurface(tabId);
+    store.getState().presentContent(tabId, enlargedContent);
+    store.getState().seedFittedSourceContent(tabId, firstMount ?? enlargedContent);
+    firstDialogLease.release();
+    const secondMount = resolveSavedFittedSourceContent(store.getState(), tabId);
+
+    expect(firstMount).toEqual(floatedContent);
+    expect(secondMount).toEqual(floatedContent);
+
+    const secondDialogLease = acquireBrowserSurface(tabId);
+    store.getState().seedFittedSourceContent(tabId, secondMount ?? enlargedContent);
+    secondDialogLease.release();
+    const restored = acquireBrowserSurface(tabId, true);
+
+    expect(store.getState().byTabId[tabId]?.fittedSourceContent).toEqual(floatedContent);
+    restored.release();
+  });
+
+  it("recomputes the fit from the current content when nothing was seeded", () => {
+    const tabId = "unseeded-browser-surface";
+    const content = {
+      x: 0,
+      y: 0,
+      width: 1_178,
+      height: 670,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    };
+    const enlargedLease = acquireBrowserSurface(tabId);
+    useBrowserSurfaceStore.getState().presentContent(tabId, content);
+    enlargedLease.release();
+
+    const fittedLease = acquireBrowserSurface(tabId, true);
+
+    expect(useBrowserSurfaceStore.getState().byTabId[tabId]?.fittedSourceContent).toEqual(content);
+    fittedLease.release();
+  });
+
+  it("consumes a seeded fit on the next claim", () => {
+    const tabId = "consumed-seed-browser-surface";
+    const seeded = {
+      x: 0,
+      y: 0,
+      width: 640,
+      height: 400,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    };
+    const current = { ...seeded, width: 1_178, height: 670 };
+    const store = useBrowserSurfaceStore;
+    const first = acquireBrowserSurface(tabId);
+    store.getState().presentContent(tabId, current);
+    store.getState().seedFittedSourceContent(tabId, seeded);
+    first.release();
+
+    acquireBrowserSurface(tabId, true).release();
+    const second = acquireBrowserSurface(tabId, true);
+
+    expect(store.getState().seededFitByTabId[tabId]).toBeUndefined();
+    expect(store.getState().byTabId[tabId]?.fittedSourceContent).toEqual(current);
+    second.release();
+  });
+
+  it("drops a seeded fit when a full-size lease claims the tab", () => {
+    const tabId = "seeded-then-claimed-browser-surface";
+    const seeded = {
+      x: 0,
+      y: 0,
+      width: 640,
+      height: 400,
+      scale: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    };
+    const current = { ...seeded, width: 1_178, height: 670 };
+    const store = useBrowserSurfaceStore;
+    store.getState().presentContent(tabId, current);
+    store.getState().seedFittedSourceContent(tabId, seeded);
+
+    const panelLease = acquireBrowserSurface(tabId);
+    panelLease.release();
+    const fittedLease = acquireBrowserSurface(tabId, true);
+
+    expect(store.getState().byTabId[tabId]?.fittedSourceContent).toEqual(current);
+    fittedLease.release();
   });
 });

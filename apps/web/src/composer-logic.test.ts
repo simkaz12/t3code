@@ -132,6 +132,15 @@ describe("composerSubmissionIntentForKey", () => {
     ).toBe(expected);
   });
 
+  it("submits on plain Enter although a non-editable enter binding exists", () => {
+    const runSelection = input.keybindings.find(
+      (binding) => binding.command === "chat.runSelection",
+    );
+
+    expect(runSelection?.shortcut.key).toBe("enter");
+    expect(composerSubmissionIntentForKey({ ...input, event: enter })).toBe("foreground");
+  });
+
   it.each(["MacIntel", "Win32", "Linux"])("uses the configured actions on %s", (platform) => {
     const modEnter = {
       ...enter,

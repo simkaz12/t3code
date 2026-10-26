@@ -74,6 +74,7 @@ export function composerSubmissionIntentForKey(input: {
     ...(input.platform === undefined ? {} : { platform: input.platform }),
     context: {
       composerFocus: true,
+      editableFocus: true,
       draftThreadRoute: input.isDraftThread,
       turnRunning: input.isRunning === true,
       composerRequiresModifier: composerRequiresModifier(input.sendShortcut, input.prompt ?? ""),
