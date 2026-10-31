@@ -82,7 +82,7 @@ function closeArtifactModal(): void {
   appAtomRegistry.set(artifactModalAtom, null);
 }
 
-export function closeArtifactModalFor(threadKey: string): void {
+function closeArtifactModalFor(threadKey: string): void {
   artifactOpeners.delete(threadKey);
   if (appAtomRegistry.get(artifactModalAtom)?.threadKey === threadKey) {
     closeArtifactModal();
@@ -224,6 +224,7 @@ function ArtifactModal(props: {
   });
 
   const openerRef = useRef<Element | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- remembers the focused DOM element on open and restores focus to it on unmount
   useEffect(() => {
     openerRef.current = document.activeElement;
     return () => {
@@ -348,6 +349,7 @@ export function ArtifactModalHost(props: {
 }) {
   const { threadKey } = props;
   const state = useAtomValue(artifactModalAtom);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes this thread's artifact modal in the external atom when the host unmounts or the thread changes
   useEffect(() => () => closeArtifactModalFor(threadKey), [threadKey]);
 
   if (state === null || state.threadKey !== threadKey) return null;

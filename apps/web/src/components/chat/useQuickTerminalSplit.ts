@@ -2,7 +2,6 @@ import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useLayoutEffect, useState } from "react";
 
-import { usePreviewPanelInlineSize } from "../../hooks/usePreviewPanelInlineSize";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import {
   selectThreadRightPanelState,
@@ -23,19 +22,15 @@ type QuickTerminalLayout = {
   readonly panelOpen: boolean;
   readonly surfaceId: string | null;
   readonly maximized: boolean;
-  readonly width: number;
   readonly terminalId: string;
   readonly setSidebarOpen: (open: boolean) => void;
-  readonly setWidth: (width: number) => void;
 };
 
 type QuickTerminalOpenInput = {
   readonly threadRef: ScopedThreadRef | null;
   readonly enabled: boolean;
   readonly sidebarOpen: boolean;
-  readonly width: number;
   readonly setSidebarOpen: (open: boolean) => void;
-  readonly setWidth: (width: number) => void;
   readonly launchTerminal: TerminalActions["launchTerminal"];
   readonly focusTerminal: () => void;
 };
@@ -64,7 +59,6 @@ export function createQuickTerminalSplit(onActiveChange: (threadKey: string | nu
     if (previous.panelOpen) store.show(previous.threadRef);
     else store.close(previous.threadRef);
     previous.setSidebarOpen(previous.sidebarOpen);
-    previous.setWidth(previous.width);
     onActiveChange(null);
     return true;
   };
@@ -113,10 +107,8 @@ export function createQuickTerminalSplit(onActiveChange: (threadKey: string | nu
       panelOpen: panel.isOpen,
       surfaceId: panel.activeSurfaceId,
       maximized: panel.maximized === true,
-      width: input.width,
       terminalId,
       setSidebarOpen: input.setSidebarOpen,
-      setWidth: input.setWidth,
     };
     store.setMaximized(threadRef, false);
     input.setSidebarOpen(false);
@@ -168,7 +160,6 @@ export function createQuickTerminalSplit(onActiveChange: (threadKey: string | nu
 export function useQuickTerminalSplit(input: {
   readonly threadRef: ScopedThreadRef | null;
   readonly enabled: boolean;
-  readonly container: HTMLElement | null;
   readonly panelState: ThreadRightPanelState;
   readonly terminalActions: TerminalActions;
   readonly focusTerminal: () => void;
@@ -178,15 +169,13 @@ export function useQuickTerminalSplit(input: {
   const threadKey = input.threadRef ? scopedThreadKey(input.threadRef) : null;
   const [activeThreadKey, setActiveThreadKey] = useState<string | null>(null);
   const [controller] = useState(() => createQuickTerminalSplit(setActiveThreadKey));
-  const inlineSize = usePreviewPanelInlineSize(undefined, {
-    container: input.container,
-    widthStorageKey: `t3code:preview-panel-width:${threadKey}`,
-    widthFraction: activeThreadKey !== null && activeThreadKey === threadKey ? 0.5 : undefined,
-  });
+  const widthFraction = activeThreadKey !== null && activeThreadKey === threadKey ? 0.5 : undefined;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the right panel and sidebar through the imperative split controller when the thread or panel no longer matches the open split
   useLayoutEffect(() => {
     controller.reconcile(input.threadRef, input.enabled, input.panelState);
   }, [controller, input.threadRef, input.enabled, input.panelState]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the right panel and sidebar through the imperative split controller on unmount
   useLayoutEffect(
     () => () => {
       controller.restore();
@@ -198,9 +187,7 @@ export function useQuickTerminalSplit(input: {
     threadRef: input.threadRef,
     enabled: input.enabled,
     sidebarOpen,
-    width: inlineSize.width,
     setSidebarOpen,
-    setWidth: inlineSize.setWidth,
     launchTerminal: input.terminalActions.launchTerminal,
     focusTerminal: input.focusTerminal,
   });
@@ -209,5 +196,5 @@ export function useQuickTerminalSplit(input: {
   );
   const ensureOpen = useStableCallback(() => controller.ensureOpen(openInput()));
 
-  return { inlineSize, toggle, ensureOpen };
+  return { widthFraction, toggle, ensureOpen };
 }
