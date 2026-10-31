@@ -12,8 +12,13 @@ export function prepareSelectionCommand(raw: string): string | null {
 
 export const useAssistantSelectionRunStore = create<{
   pending: string | null;
-  setPending: (text: string | null) => void;
+  owner: string | null;
+  setPending: (text: string | null, owner?: string | null) => void;
+  clearPending: (owner: string) => void;
 }>((set) => ({
   pending: null,
-  setPending: (text) => set({ pending: text }),
+  owner: null,
+  setPending: (text, owner = null) => set({ pending: text, owner: text === null ? null : owner }),
+  clearPending: (owner) =>
+    set((state) => (state.owner === owner ? { pending: null, owner: null } : state)),
 }));

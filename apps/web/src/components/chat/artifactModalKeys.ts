@@ -1,6 +1,6 @@
 import { isMacPlatform } from "@t3tools/shared/keybindings";
 
-export const ARTIFACT_VIEWER_CHORD_WINDOW_MS = 500;
+const ARTIFACT_VIEWER_CHORD_WINDOW_MS = 500;
 
 export type ViewerAction =
   | "scrollLine"

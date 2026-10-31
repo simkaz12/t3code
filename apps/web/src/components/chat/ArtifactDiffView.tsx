@@ -5,7 +5,7 @@ import type { Ref } from "react";
 
 import { useRenderedAppearance } from "~/hooks/useTheme";
 import { useClientSettings } from "~/hooks/useSettings";
-import { useCheckpointDiff } from "~/lib/checkpointDiffState";
+import { useCheckpointDiff } from "~/state/queries";
 import {
   buildFileDiffContentVersion,
   buildFileDiffIdentityKey,

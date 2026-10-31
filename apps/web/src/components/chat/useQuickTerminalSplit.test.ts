@@ -22,7 +22,6 @@ function setup(sidebarOpen = true, controller = createQuickTerminalSplit(vi.fn()
   const setSidebarOpen = vi.fn((open: boolean) => {
     sidebarOpen = open;
   });
-  const setWidth = vi.fn();
   const launchTerminal = vi.fn((input: Parameters<ToggleInput["launchTerminal"]>[0]) => {
     const terminalId = `quick-${launchTerminal.mock.calls.length}`;
     input.place(terminalId);
@@ -34,9 +33,7 @@ function setup(sidebarOpen = true, controller = createQuickTerminalSplit(vi.fn()
     threadRef,
     enabled: true,
     sidebarOpen,
-    width: 620,
     setSidebarOpen,
-    setWidth,
     launchTerminal,
     focusTerminal,
     focusComposer,
@@ -46,7 +43,6 @@ function setup(sidebarOpen = true, controller = createQuickTerminalSplit(vi.fn()
     controller,
     input,
     setSidebarOpen,
-    setWidth,
     launchTerminal,
     focusTerminal,
     focusComposer,
@@ -82,7 +78,6 @@ describe("quick terminal split", () => {
       expect(test.controller.toggle(test.input())).toBe(true);
 
       expect(test.setSidebarOpen).toHaveBeenLastCalledWith(sidebarOpen);
-      expect(test.setWidth).toHaveBeenLastCalledWith(620);
       expect(panel()).toMatchObject({
         isOpen: true,
         activeSurfaceId: "file:src/app.ts",
@@ -174,7 +169,6 @@ describe("quick terminal split", () => {
       test.controller.reconcile(reason === "no thread" ? null : threadRef, reason !== "disabled");
 
       expect(test.setSidebarOpen).toHaveBeenLastCalledWith(true);
-      expect(test.setWidth).toHaveBeenLastCalledWith(620);
       expect(panel().activeSurfaceId).toBe("files");
       expect(panel().surfaces.some((surface) => surface.id === "terminal:quick-1")).toBe(true);
       expect(test.controller.restore()).toBe(false);

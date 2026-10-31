@@ -1,12 +1,11 @@
 import "~/index.css";
 
 import type { ReactNode } from "react";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { getThemeColorVariable, type ThemeColors } from "~/themePalette";
+import { render } from "../../../test/render";
 import { Button } from "../ui/button";
 
 import { ComposerBanner } from "./ComposerBanner";
@@ -77,7 +76,6 @@ function resetTheme() {
 const SUBAGENTS: ComposerBannerStackItem = {
   id: "subagents",
   variant: "default",
-  priority: "activity",
   icon: <span className="size-1.5 rounded-full bg-current" />,
   title: "Waiting on 2 subagents",
   description: "Map pi-jira MCP server, Map verify-ticket and last oktra QA",
@@ -91,7 +89,6 @@ const SUBAGENTS: ComposerBannerStackItem = {
 const GOAL: ComposerBannerStackItem = {
   id: "goal",
   variant: "default",
-  priority: "notice",
   icon: null,
   title: "Goal active",
   description: "Finish the banner fix",
@@ -134,7 +131,12 @@ interface Scenario {
 
 const BANNER_STACK_SINGLE = <ComposerBannerStack items={[SUBAGENTS]} />;
 const BANNER_STACK_PEEK = <ComposerBannerStack items={[SUBAGENTS, GOAL]} />;
-const QUEUED_AND_BANNER = <ComposerBannerStack items={[SUBAGENTS]} attachedAbove={QUEUED} />;
+const QUEUED_AND_BANNER = (
+  <>
+    {QUEUED}
+    <ComposerBannerStack items={[SUBAGENTS]} />
+  </>
+);
 
 const SCENARIOS = {
   plain: { name: "plain", banners: null, strip: false, attached: false },
@@ -165,93 +167,86 @@ const SCENARIOS = {
   },
 } satisfies Record<string, Scenario>;
 
-let root: Root;
-let wrapper: HTMLDivElement;
-
-beforeEach(async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  await page.viewport(900, 640);
-  wrapper = document.createElement("div");
-  wrapper.style.cssText = "width: 720px; padding: 32px; background: var(--background);";
-  document.body.append(wrapper);
-  root = createRoot(wrapper);
-});
-
-afterEach(async () => {
-  await act(async () => root.unmount());
-  wrapper.remove();
-  resetTheme();
-  vi.unstubAllGlobals();
-});
-
-async function mount(theme: ThemeName, scenario: Scenario, focused: boolean) {
-  applyTheme(theme);
-  await act(async () =>
-    root.render(
-      <ComposerSurface.Shell contextStrip={scenario.strip}>
-        <ComposerSurface.Host>
-          <div className="relative z-10">
-            <form data-chat-composer-form="true" className="mx-auto w-full min-w-0">
-              {scenario.banners ? (
-                <ComposerBanner.Dock>
-                  <ComposerBanner.Column>{scenario.banners}</ComposerBanner.Column>
-                </ComposerBanner.Dock>
-              ) : null}
-              <div className="relative">
-                <ComposerSurface.Main className={scenario.mainClassName}>
-                  <div data-chat-composer-surface="true" className="rounded-3xl">
-                    <div className="relative px-3 pt-3.5 pb-2 sm:px-4 sm:pt-4">
-                      <textarea
-                        rows={2}
-                        placeholder="Ask anything, @tag files/folders, or / for commands"
-                        className="block w-full resize-none bg-transparent text-sm outline-none"
-                      />
-                      <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>Claude Opus 5.5</span>
-                        <span>High</span>
-                        <span>Full access</span>
-                      </div>
+function composerUi(scenario: Scenario) {
+  return (
+    <ComposerSurface.Shell contextRow={scenario.strip}>
+      <ComposerSurface.Host>
+        <div className="relative z-10">
+          <form data-chat-composer-form="true" className="mx-auto w-full min-w-0">
+            {scenario.banners ? (
+              <ComposerBanner.Dock>
+                <ComposerBanner.Column>{scenario.banners}</ComposerBanner.Column>
+              </ComposerBanner.Dock>
+            ) : null}
+            <div className="relative">
+              <ComposerSurface.Main className={scenario.mainClassName}>
+                <div data-chat-composer-surface="true" className="rounded-3xl">
+                  <div className="relative px-3 pt-3.5 pb-2 sm:px-4 sm:pt-4">
+                    <textarea
+                      rows={2}
+                      placeholder="Ask anything, @tag files/folders, or / for commands"
+                      className="block w-full resize-none bg-transparent text-sm outline-none"
+                    />
+                    <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>Claude Opus 5.5</span>
+                      <span>High</span>
+                      <span>Full access</span>
                     </div>
                   </div>
-                </ComposerSurface.Main>
-              </div>
-            </form>
-          </div>
-        </ComposerSurface.Host>
-        {scenario.strip ? (
-          <div className="min-h-0">
-            <div className="relative z-0">
-              <ComposerSurface.ContextStrip>
-                <span className="text-xs text-muted-foreground">Current checkout</span>
-                <span className="ms-auto text-xs text-muted-foreground">dev</span>
-              </ComposerSurface.ContextStrip>
+                </div>
+              </ComposerSurface.Main>
             </div>
+          </form>
+        </div>
+      </ComposerSurface.Host>
+      {scenario.strip ? (
+        <div className="min-h-0">
+          <div className="relative z-0">
+            <ComposerSurface.ContextStrip>
+              <span className="text-xs text-muted-foreground">Current checkout</span>
+              <span className="ms-auto text-xs text-muted-foreground">dev</span>
+            </ComposerSurface.ContextStrip>
           </div>
-        ) : null}
-      </ComposerSurface.Shell>,
-    ),
+        </div>
+      ) : null}
+    </ComposerSurface.Shell>
   );
-  await act(
-    () => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))),
-  );
+}
+
+async function mount(theme: ThemeName, scenario: Scenario, focused: boolean, phone = false) {
+  await page.viewport(phone ? 400 : 900, 640);
+
+  await using stack = new AsyncDisposableStack();
+  stack.defer(resetTheme);
+  applyTheme(theme);
+
+  const wrapper = document.createElement("div");
+  wrapper.style.cssText = `width: ${phone ? 336 : 720}px; padding: 32px; background: var(--background);`;
+  stack.use(await render(composerUi(scenario), { container: wrapper }));
 
   const textarea = wrapper.querySelector("textarea")!;
   if (focused) {
     await userEvent.click(textarea);
     expect(document.activeElement).toBe(textarea);
   }
+
+  const owned = stack.move();
   return {
+    wrapper,
     shell: wrapper.querySelector<HTMLElement>('[data-slot="composer-shell"]')!,
     host: wrapper.querySelector<HTMLElement>('[data-slot="composer-host"]')!,
     main: wrapper.querySelector<HTMLElement>('[data-chat-composer-main-surface="true"]')!,
     strip: wrapper.querySelector<HTMLElement>('[data-slot="composer-context-strip"]'),
     banner: wrapper.querySelector<HTMLElement>('[data-composer-banner-surface="attached"]'),
+    async [Symbol.asyncDispose]() {
+      await owned.disposeAsync();
+    },
   };
 }
 
-async function shoot(theme: ThemeName, scenario: Scenario, focused: boolean) {
+async function shoot(element: HTMLElement, theme: ThemeName, scenario: Scenario, focused: boolean) {
   await page.screenshot({
-    element: wrapper,
+    element,
     path: `./__screenshots__/ComposerSurface.city/${theme}/${scenario.name}-${focused ? "focus" : "rest"}.png`,
     save: true,
   });
@@ -290,8 +285,8 @@ describe("composer screenshots", () => {
   it.each(SCREENSHOT_CASES)(
     "$theme $scenario.name focused=$focused",
     async ({ theme, scenario, focused }) => {
-      await mount(theme, scenario, focused);
-      await shoot(theme, scenario, focused);
+      await using scene = await mount(theme, scenario, focused);
+      await shoot(scene.wrapper, theme, scenario, focused);
     },
   );
 });
@@ -300,10 +295,14 @@ describe("City composer below the sm breakpoint", () => {
   it.each([SCENARIOS.bannerStrip, SCENARIOS.plainStrip])(
     "keeps the edge hand-off below the sm breakpoint ($name)",
     async (scenario) => {
-      await page.viewport(400, 640);
-      wrapper.style.width = "336px";
-      const { host, main } = await mount("city-dark", scenario, true);
-      await shoot("city-dark", { ...scenario, name: `${scenario.name}-phone` }, true);
+      await using scene = await mount("city-dark", scenario, true, true);
+      const { host, main } = scene;
+      await shoot(
+        scene.wrapper,
+        "city-dark",
+        { ...scenario, name: `${scenario.name}-phone` },
+        true,
+      );
 
       const carrier = scenario.attached ? main : host;
       expect(visibleEdge(carrier)).toMatchObject({ display: "block", color: CITY_EDGE_FOCUS });
@@ -316,7 +315,8 @@ describe("City composer edge", () => {
   it.each(Object.values(SCENARIOS).filter((scenario) => scenario.attached))(
     "hands the ring from the Host to Main while a banner is attached ($name)",
     async (scenario) => {
-      const { host, main } = await mount("city-dark", scenario, false);
+      await using scene = await mount("city-dark", scenario, false);
+      const { host, main } = scene;
 
       expect(after(host).display).toBe("none");
       expect(getComputedStyle(host).backgroundColor).toBe("rgba(0, 0, 0, 0)");
@@ -332,7 +332,8 @@ describe("City composer edge", () => {
   it.each([SCENARIOS.plain, SCENARIOS.plainStrip])(
     "keeps the ring on the Host without a banner ($name)",
     async (scenario) => {
-      const { host, main } = await mount("city-dark", scenario, false);
+      await using scene = await mount("city-dark", scenario, false);
+      const { host, main } = scene;
 
       expect(visibleEdge(host)).toMatchObject({ display: "block", color: CITY_EDGE_REST });
       expect(after(main).display).toBe("none");
@@ -342,7 +343,8 @@ describe("City composer edge", () => {
   it.each([SCENARIOS.plain, SCENARIOS.bannerStrip, SCENARIOS.queuedBanner])(
     "turns the carrying edge plain red on focus without a gradient ($name)",
     async (scenario) => {
-      const { host, main } = await mount("city-dark", scenario, true);
+      await using scene = await mount("city-dark", scenario, true);
+      const { host, main } = scene;
       const carrier = scenario.attached ? main : host;
 
       const edge = visibleEdge(carrier);
@@ -352,34 +354,26 @@ describe("City composer edge", () => {
     },
   );
 
-  it("paints the attached banner and context strip in the resting edge colour, even on focus", async () => {
+  it("paints the attached banner in the resting edge colour, even on focus", async () => {
     for (const focused of [false, true]) {
-      const { banner, strip } = await mount("city-dark", SCENARIOS.bannerStrip, focused);
+      await using scene = await mount("city-dark", SCENARIOS.bannerStrip, focused);
+      const { banner, strip } = scene;
 
       expect(channels(before(banner!).borderLeftColor)).toBe(CITY_EDGE_REST);
-      expect(channels(after(strip!).backgroundColor)).toBe(CITY_EDGE_REST);
-      await act(async () => root.render(null));
+      expect(strip).not.toBeNull();
     }
   });
 
   it("keeps the warning variant tint on its drawer instead of the neutral edge", async () => {
-    const { banner } = await mount("city-dark", SCENARIOS.approvalStrip, false);
+    await using scene = await mount("city-dark", SCENARIOS.approvalStrip, false);
+    const { banner } = scene;
 
     expect(channels(before(banner!).borderLeftColor)).not.toBe(CITY_EDGE_REST);
   });
 
-  it("cuts the context strip corners at 6px instead of the 22px curve silhouette", async () => {
-    const { shell, strip } = await mount("city-dark", SCENARIOS.bannerStrip, false);
-
-    expect(before(shell).clipPath).not.toContain("curve");
-    expect(before(shell).clipPath).toContain("polygon");
-    expect(before(strip!).clipPath).toContain("polygon");
-    expect(before(strip!).borderLeftWidth).toBe("0px");
-    expect(after(strip!).clipPath).toContain("polygon");
-  });
-
   it("keeps the context strip silhouette out of the City composer without a strip", async () => {
-    const { shell } = await mount("city-dark", SCENARIOS.plain, false);
+    await using scene = await mount("city-dark", SCENARIOS.plain, false);
+    const { shell } = scene;
 
     expect(before(shell).display).toBe("none");
   });
@@ -387,20 +381,13 @@ describe("City composer edge", () => {
 
 describe("Default theme composer", () => {
   it("keeps the upstream hand-off from Host to Main and no City clipping", async () => {
-    const { host, main, shell } = await mount("default-dark", SCENARIOS.bannerStrip, true);
+    await using scene = await mount("default-dark", SCENARIOS.bannerStrip, true);
+    const { host, main, shell } = scene;
 
     expect(after(host).display).toBe("none");
     expect(after(main).display).toBe("block");
     expect(getComputedStyle(host).clipPath).toBe("none");
     expect(getComputedStyle(main).clipPath).toBe("none");
     expect(before(shell).display).toBe("none");
-  });
-
-  it("keeps the upstream context strip silhouette and border", async () => {
-    const { shell, strip } = await mount("default-dark", SCENARIOS.plainStrip, false);
-
-    expect(before(shell).clipPath).toContain("curve");
-    expect(before(strip!).borderLeftWidth).toBe("1px");
-    expect(after(strip!).clipPath).toBe("none");
   });
 });

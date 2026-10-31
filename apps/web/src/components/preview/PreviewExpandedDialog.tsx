@@ -89,12 +89,14 @@ function PreviewExpandedDialog(props: {
     content: resolveSavedFittedSourceContent(useBrowserSurfaceStore.getState(), runtimeTabId),
   }));
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the floated source content back to the browser surface store on cleanup before paint
   useLayoutEffect(() => {
     const { content, runtimeTabId: seededTabId } = floatedSource;
     if (!open || content === null) return;
     return () => useBrowserSurfaceStore.getState().seedFittedSourceContent(seededTabId, content);
   }, [floatedSource, open]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- returns focus to the mini player DOM element after unmount when the preview is no longer expanded
   useEffect(
     () => () => {
       const { byThreadKey } = usePreviewExpandedStore.getState();
@@ -271,6 +273,7 @@ function SlotAgentCursorLayer(props: {
   const { anchorRef, layoutVersion, tabId, zoomFactor, controller } = props;
   const [rect, setRect] = useState<AnchorRect | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the anchor DOM node and tracks its resize and window resize events
   useLayoutEffect(() => {
     const element = anchorRef.current;
     if (!element) return;

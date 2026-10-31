@@ -40,7 +40,7 @@ describe("prepareSelectionCommand", () => {
 
 describe("useAssistantSelectionRunStore", () => {
   beforeEach(() => {
-    useAssistantSelectionRunStore.setState({ pending: null });
+    useAssistantSelectionRunStore.setState({ pending: null, owner: null });
   });
 
   it("stores and clears the pending command", () => {
@@ -49,5 +49,26 @@ describe("useAssistantSelectionRunStore", () => {
 
     useAssistantSelectionRunStore.getState().setPending(null);
     expect(useAssistantSelectionRunStore.getState().pending).toBeNull();
+  });
+
+  it("clears the pending command only for the toolbar that set it", () => {
+    const { setPending, clearPending } = useAssistantSelectionRunStore.getState();
+    setPending("ls", "main-toolbar");
+
+    clearPending("side-chat-toolbar");
+    expect(useAssistantSelectionRunStore.getState().pending).toBe("ls");
+
+    clearPending("main-toolbar");
+    expect(useAssistantSelectionRunStore.getState().pending).toBeNull();
+    expect(useAssistantSelectionRunStore.getState().owner).toBeNull();
+  });
+
+  it("hands the pending command to the toolbar that sets it last", () => {
+    const { setPending, clearPending } = useAssistantSelectionRunStore.getState();
+    setPending("ls", "first-toolbar");
+    setPending("pwd", "second-toolbar");
+
+    clearPending("first-toolbar");
+    expect(useAssistantSelectionRunStore.getState().pending).toBe("pwd");
   });
 });
