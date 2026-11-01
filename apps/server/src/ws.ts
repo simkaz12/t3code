@@ -2,6 +2,7 @@ import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
+import * as MemoryProposalPoller from "./memory/MemoryProposalPoller.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 
@@ -1305,6 +1306,10 @@ export const layerWsRpc = (
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      const memoryProposalPoller = Option.getOrElse(
+        yield* Effect.serviceOption(MemoryProposalPoller.MemoryProposalPoller),
+        () => MemoryProposalPoller.unavailable,
+      );
       const repositoryIdentityResolver =
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
@@ -2746,6 +2751,10 @@ export const layerWsRpc = (
         [WS_METHODS.projectCloneRetry]: (input) =>
           projectCloneTracker.retry(input.projectId).pipe(Effect.map((applied) => ({ applied }))),
         [WS_METHODS.subscribeProjectClones]: () => projectCloneTracker.stream,
+        [WS_METHODS.memorySubscribeProposals]: () => memoryProposalPoller.stream,
+        [WS_METHODS.memoryApprove]: (input) => memoryProposalPoller.approve(input),
+        [WS_METHODS.memoryReject]: (input) => memoryProposalPoller.reject(input),
+        [WS_METHODS.memoryReinforce]: (input) => memoryProposalPoller.reinforce(input),
         [WS_METHODS.sourceControlPublishRepository]: (input) =>
           sourceControlRepositories.publishRepository(input).pipe(
             Effect.tap(() => repositoryIdentityResolver.resolve(input.cwd, { refresh: true })),
@@ -3281,6 +3290,10 @@ export const layer = Layer.unwrap(
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
+    const memoryProposals = Context.get(
+      yield* Layer.build(MemoryProposalPoller.layer),
+      MemoryProposalPoller.MemoryProposalPoller,
+    );
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3364,6 +3377,9 @@ export const layer = Layer.unwrap(
               ),
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
+              Layer.provide(
+                Layer.succeed(MemoryProposalPoller.MemoryProposalPoller, memoryProposals),
+              ),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

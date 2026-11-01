@@ -22,6 +22,11 @@ Ordinary coding tasks need no T3 tools.
 
 - Answer data with a trend or comparison with a chart, and show any visual the user asks for here: pass its HTML to \`html_preview\`, then \`html_render\`. If the visual is a file, pass that file's HTML. A screenshot on disk or a text description does not show it. Never start a server for it. Tools a web page exposes give data only. Never use them to show results. Asked for an image to post, send, or use elsewhere: a \`.png\` file and its path, never \`html_render\`.
 - Never use \`preview_*\` unasked to verify or show your own edit. Use them when the current request asks for browser work, including recording edits, or names a page or tab. Do not repeat preview calls from an earlier turn. Public pages: web fetch or search unless browser work was asked; then preview tools only, no web fetch. Close a tab you opened before you reply, unless the user asked for it or uses it.`,
+  `### Memory
+
+\`memory_propose\` queues a record for the user to approve; nothing is saved until they do. Propose a gotcha you hit while working (what failed, the cause, the fix), or a decision once it is made, with the alternative you ruled out in \`rejected\`. Never propose status, progress, or session narrative, and skip anything \`memory_recall\` already returns. \`headline\` is under 100 characters and names the topic. \`memory_recall\` searches saved memory before you assume a question is new; \`memory_get\` reads one result in full.
+
+"Harvest this thread": review this thread yourself, call \`memory_propose\` with \`origin: "harvest"\` once per decision and gotcha in it, and tell the user the count. If the tools say memory is not configured, say so and stop.`,
 ];
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `

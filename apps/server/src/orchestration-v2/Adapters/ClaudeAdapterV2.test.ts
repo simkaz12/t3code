@@ -85,6 +85,7 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import { PreviewControlsToolkit } from "../../mcp/toolkits/previewControls/tools.ts";
 import { HtmlToolkit } from "../../mcp/toolkits/html/tools.ts";
 import { EnvironmentToolkit } from "../../mcp/toolkits/environment/tools.ts";
+import { MemoryToolkit } from "../../mcp/toolkits/memory/tools.ts";
 import { ProjectToolkit } from "../../mcp/toolkits/project/tools.ts";
 import { WorktreeToolkit } from "../../mcp/toolkits/worktree/tools.ts";
 import { ThreadToolkit } from "../../mcp/toolkits/thread/tools.ts";
@@ -576,6 +577,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       ...Object.values(EnvironmentToolkit.tools),
       ...Object.values(PreviewControlsToolkit.tools),
       ...Object.values(HtmlToolkit.tools),
+      ...Object.values(MemoryToolkit.tools),
     ]
       .filter((tool) => Context.get(tool.annotations, Tool.Readonly))
       .map((tool) => `mcp__t3-code__${tool.name}`)
@@ -585,6 +587,9 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       [...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS].sort(),
       readOnlyToolNames,
     );
+    assert.include(readOnlyToolNames, "mcp__t3-code__memory_recall");
+    assert.include(readOnlyToolNames, "mcp__t3-code__memory_get");
+    assert.notInclude(readOnlyToolNames, "mcp__t3-code__memory_propose");
   });
 });
 
