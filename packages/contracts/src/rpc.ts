@@ -602,6 +602,8 @@ export const WS_METHODS = {
   memoryApprove: "memory.approve",
   memoryReject: "memory.reject",
   memoryReinforce: "memory.reinforce",
+  memoryGetSettings: "memory.getSettings",
+  memoryUpdateSettings: "memory.updateSettings",
 
   subscribeVcsStatus: "subscribeVcsStatus",
   subscribeWorktreeSetup: "subscribeWorktreeSetup",
@@ -1384,6 +1386,16 @@ export const MemoryReinforceInput = Schema.Struct({
 });
 export type MemoryReinforceInput = typeof MemoryReinforceInput.Type;
 
+export const MemoryServerSettings = Schema.Struct({
+  cleanerConfidenceFloor: Schema.Number,
+});
+export type MemoryServerSettings = typeof MemoryServerSettings.Type;
+
+export const MemoryUpdateSettingsInput = Schema.Struct({
+  cleanerConfidenceFloor: Schema.Number,
+});
+export type MemoryUpdateSettingsInput = typeof MemoryUpdateSettingsInput.Type;
+
 export class MemoryProposalError extends Schema.TaggedError<MemoryProposalError>()(
   "MemoryProposalError",
   { detail: Schema.String },
@@ -1417,6 +1429,18 @@ const WsMemoryRejectRpc = Rpc.make(WS_METHODS.memoryReject, {
 const WsMemoryReinforceRpc = Rpc.make(WS_METHODS.memoryReinforce, {
   payload: MemoryReinforceInput,
   success: Schema.Void,
+  error: MemoryRpcError,
+});
+
+const WsMemoryGetSettingsRpc = Rpc.make(WS_METHODS.memoryGetSettings, {
+  payload: Schema.Struct({}),
+  success: MemoryServerSettings,
+  error: MemoryRpcError,
+});
+
+const WsMemoryUpdateSettingsRpc = Rpc.make(WS_METHODS.memoryUpdateSettings, {
+  payload: MemoryUpdateSettingsInput,
+  success: MemoryServerSettings,
   error: MemoryRpcError,
 });
 
@@ -2227,6 +2251,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsMemoryApproveRpc,
   WsMemoryRejectRpc,
   WsMemoryReinforceRpc,
+  WsMemoryGetSettingsRpc,
+  WsMemoryUpdateSettingsRpc,
   WsProjectsListEntriesRpc,
   WsProjectsListIgnoredFilesRpc,
   WsProjectsReadFileRpc,

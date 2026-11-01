@@ -4,6 +4,8 @@ import {
   type MemoryProposalsSnapshot,
   type MemoryProposalTile,
   type MemoryRejectInput,
+  type MemoryServerSettings,
+  type MemoryUpdateSettingsInput,
   type MemoryReinforceInput,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -41,6 +43,10 @@ export class MemoryProposalPoller extends Context.Service<
     readonly approve: (input: MemoryApproveInput) => Effect.Effect<void, MemoryProposalError>;
     readonly reject: (input: MemoryRejectInput) => Effect.Effect<void, MemoryProposalError>;
     readonly reinforce: (input: MemoryReinforceInput) => Effect.Effect<void, MemoryProposalError>;
+    readonly getSettings: () => Effect.Effect<MemoryServerSettings, MemoryProposalError>;
+    readonly updateSettings: (
+      input: MemoryUpdateSettingsInput,
+    ) => Effect.Effect<MemoryServerSettings, MemoryProposalError>;
   }
 >()("t3/memory/MemoryProposalPoller") {}
 
@@ -51,6 +57,10 @@ export const unavailable: MemoryProposalPoller["Service"] = {
   reject: () =>
     Effect.fail(new MemoryProposalError({ detail: "Memory proposals are unavailable." })),
   reinforce: () =>
+    Effect.fail(new MemoryProposalError({ detail: "Memory proposals are unavailable." })),
+  getSettings: () =>
+    Effect.fail(new MemoryProposalError({ detail: "Memory proposals are unavailable." })),
+  updateSettings: () =>
     Effect.fail(new MemoryProposalError({ detail: "Memory proposals are unavailable." })),
 };
 
@@ -201,6 +211,12 @@ export const make = Effect.gen(function* () {
         .reinforce(input.proposalId, input.recordId)
         .pipe(Effect.mapError(proposalError));
       yield* dropTile(input.proposalId);
+    }),
+    getSettings: Effect.fn("MemoryProposalPoller.getSettings")(function* () {
+      return yield* client.getSettings().pipe(Effect.mapError(proposalError));
+    }),
+    updateSettings: Effect.fn("MemoryProposalPoller.updateSettings")(function* (input) {
+      return yield* client.updateSettings(input).pipe(Effect.mapError(proposalError));
     }),
   });
 });

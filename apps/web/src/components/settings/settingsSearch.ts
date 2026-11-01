@@ -703,6 +703,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["memory proposals tray tabularium agents server address"],
   },
   {
+    id: "memory-cleaner-confidence",
+    title: "Cleaner confidence floor",
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: ["memory cleaner confidence floor jev threshold tiles"],
+  },
+  {
     id: "app-version",
     title: "Version",
     to: "/settings/about",

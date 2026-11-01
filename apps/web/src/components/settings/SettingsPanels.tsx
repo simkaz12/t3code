@@ -1812,6 +1812,7 @@ export function ThreadsSettingsPanel() {
             searchableSetting("response-streaming").id,
             searchableSetting("memory-scope").id,
             searchableSetting("memory-server-url").id,
+            searchableSetting("memory-cleaner-confidence").id,
           ]}
         >
           <ThreadTitleInstructionsSettings />

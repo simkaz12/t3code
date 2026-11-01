@@ -131,6 +131,11 @@ export const MemoryRecallResult = Schema.Struct({
 });
 export type MemoryRecallResult = typeof MemoryRecallResult.Type;
 
+export const MemoryServerSettings = Schema.Struct({
+  cleanerConfidenceFloor: Schema.Number,
+});
+export type MemoryServerSettings = typeof MemoryServerSettings.Type;
+
 const RecallResponse = Schema.Struct({ results: Schema.Array(MemoryRecallResult) });
 const ProposalList = Schema.Array(MemoryProposal);
 const RecordBody = Schema.Record(Schema.String, Schema.Unknown);
@@ -197,6 +202,10 @@ export interface MemoryClientShape {
   ) => Effect.Effect<Readonly<Record<string, unknown>>, MemoryClientError>;
   readonly reject: (id: string, reason?: string) => Effect.Effect<void, MemoryClientError>;
   readonly reinforce: (id: string, recordId: string) => Effect.Effect<void, MemoryClientError>;
+  readonly getSettings: () => Effect.Effect<MemoryServerSettings, MemoryClientError>;
+  readonly updateSettings: (patch: {
+    readonly cleanerConfidenceFloor: number;
+  }) => Effect.Effect<MemoryServerSettings, MemoryClientError>;
 }
 
 export class MemoryClient extends Context.Service<MemoryClient, MemoryClientShape>()(
@@ -266,7 +275,7 @@ const makeMemoryClient = (
   baseUrl: Effect.Effect<string, MemoryClientError>,
 ): MemoryClientShape => {
   const send = Effect.fn("MemoryClient.send")(function* (
-    method: "GET" | "POST" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     options?: {
       readonly query?: Readonly<Record<string, string | undefined>>;
@@ -391,6 +400,18 @@ const makeMemoryClient = (
         "reinforce",
         send("POST", `/proposals/${segment(id)}/reinforce`, { body: { recordId } }).pipe(
           Effect.asVoid,
+        ),
+      ),
+    getSettings: () =>
+      call(
+        "getSettings",
+        send("GET", "/settings").pipe(Effect.flatMap(decoded(MemoryServerSettings))),
+      ),
+    updateSettings: (patch) =>
+      call(
+        "updateSettings",
+        send("PUT", "/settings", { body: patch }).pipe(
+          Effect.flatMap(decoded(MemoryServerSettings)),
         ),
       ),
   };

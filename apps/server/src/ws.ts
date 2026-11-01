@@ -2755,6 +2755,8 @@ export const layerWsRpc = (
         [WS_METHODS.memoryApprove]: (input) => memoryProposalPoller.approve(input),
         [WS_METHODS.memoryReject]: (input) => memoryProposalPoller.reject(input),
         [WS_METHODS.memoryReinforce]: (input) => memoryProposalPoller.reinforce(input),
+        [WS_METHODS.memoryGetSettings]: () => memoryProposalPoller.getSettings(),
+        [WS_METHODS.memoryUpdateSettings]: (input) => memoryProposalPoller.updateSettings(input),
         [WS_METHODS.sourceControlPublishRepository]: (input) =>
           sourceControlRepositories.publishRepository(input).pipe(
             Effect.tap(() => repositoryIdentityResolver.resolve(input.cwd, { refresh: true })),

@@ -53,6 +53,8 @@ const fakeClient = (overrides: Partial<MemoryClientShape>): MemoryClientShape =>
   approve: () => Effect.succeed({}),
   reject: () => Effect.void,
   reinforce: () => Effect.void,
+  getSettings: () => Effect.succeed({ cleanerConfidenceFloor: 0.7 }),
+  updateSettings: (patch) => Effect.succeed(patch),
   ...overrides,
 });
 
@@ -290,6 +292,42 @@ it.effect("turns a refused action into a proposal error and keeps the tile", () 
 
         assert.equal(error._tag, "MemoryProposalError");
         assert.include(error.detail, "404");
+      }),
+  ),
+);
+
+it.effect("delegates settings reads and writes to the client", () =>
+  Effect.gen(function* () {
+    const updates = yield* Queue.unbounded<unknown>();
+
+    yield* withPoller(
+      fakeClient({
+        updateSettings: (patch) => Queue.offer(updates, patch).pipe(Effect.as(patch)),
+      }),
+      (poller) =>
+        Effect.gen(function* () {
+          assert.deepEqual(yield* poller.getSettings(), { cleanerConfidenceFloor: 0.7 });
+          assert.deepEqual(yield* poller.updateSettings({ cleanerConfidenceFloor: 0.8 }), {
+            cleanerConfidenceFloor: 0.8,
+          });
+          assert.deepEqual(yield* Queue.take(updates), { cleanerConfidenceFloor: 0.8 });
+        }),
+    );
+  }),
+);
+
+it.effect("turns a refused settings write into a proposal error", () =>
+  withPoller(
+    fakeClient({
+      updateSettings: () =>
+        Effect.fail(new MemoryClientError({ reason: "rejected", status: 400, detail: "bad" })),
+    }),
+    (poller) =>
+      Effect.gen(function* () {
+        const error = yield* poller.updateSettings({ cleanerConfidenceFloor: 2 }).pipe(Effect.flip);
+
+        assert.equal(error._tag, "MemoryProposalError");
+        assert.include(error.detail, "400");
       }),
   ),
 );
