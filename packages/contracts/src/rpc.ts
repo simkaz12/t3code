@@ -598,6 +598,10 @@ export const WS_METHODS = {
   projectCloneCancel: "projectClone.cancel",
   projectCloneRetry: "projectClone.retry",
   subscribeProjectClones: "subscribeProjectClones",
+  memorySubscribeProposals: "memory.subscribeProposals",
+  memoryApprove: "memory.approve",
+  memoryReject: "memory.reject",
+  memoryReinforce: "memory.reinforce",
 
   subscribeVcsStatus: "subscribeVcsStatus",
   subscribeWorktreeSetup: "subscribeWorktreeSetup",
@@ -1279,6 +1283,141 @@ const WsSubscribeProjectClonesRpc = Rpc.make(WS_METHODS.subscribeProjectClones, 
   success: ProjectCloneListEvent,
   error: EnvironmentAuthorizationError,
   stream: true,
+});
+
+export const MemorySupersedeReason = Schema.Literals(["correction", "changed", "elaborated"]);
+export type MemorySupersedeReason = typeof MemorySupersedeReason.Type;
+
+export const MemoryProposalNeighbour = Schema.Struct({
+  id: Schema.String,
+  source: Schema.Literals(["v2", "legacy"]),
+  headline: Schema.String,
+  similarity: Schema.Number,
+  relation: Schema.NullOr(Schema.String),
+});
+export type MemoryProposalNeighbour = typeof MemoryProposalNeighbour.Type;
+
+/** A pending proposal as the tray shows it: the memory server's proposal with its checks flattened. */
+export const MemoryProposalTile = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals(["decision", "fact"]),
+  origin: Schema.Literals(["agent", "harvest", "cleaner", "promotion"]),
+  headline: Schema.String,
+  claim: Schema.String,
+  why: Schema.String,
+  rejected: Schema.NullOr(Schema.String),
+  scope: Schema.String,
+  topic: Schema.NullOr(Schema.String),
+  purpose: Schema.NullOr(Schema.String),
+  threadId: Schema.String,
+  threadTitle: Schema.String,
+  projectId: Schema.String,
+  branch: Schema.NullOr(Schema.String),
+  machine: Schema.String,
+  link: Schema.String,
+  excerpt: Schema.String,
+  flags: Schema.Array(Schema.String),
+  confidence: Schema.NullOr(Schema.Number),
+  neighbours: Schema.Array(MemoryProposalNeighbour),
+  suggestion: Schema.NullOr(
+    Schema.Struct({
+      action: Schema.Literals(["reinforce", "supersede"]),
+      recordId: Schema.String,
+      source: Schema.Literals(["v2", "legacy"]),
+      reasonClass: Schema.NullOr(MemorySupersedeReason),
+    }),
+  ),
+  target: Schema.NullOr(
+    Schema.Struct({
+      recordId: Schema.String,
+      source: Schema.Literals(["v2", "legacy"]),
+      action: Schema.Literals(["retire", "supersede", "merge", "promote"]),
+      replacementId: Schema.optional(Schema.NullOr(Schema.String)),
+      recordHeadline: Schema.NullOr(Schema.String),
+      replacementHeadline: Schema.NullOr(Schema.String),
+      reason: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+  checks: Schema.Unknown,
+  createdAt: Schema.String,
+});
+export type MemoryProposalTile = typeof MemoryProposalTile.Type;
+
+export const MemoryProposalsSnapshot = Schema.Struct({
+  configured: Schema.Boolean,
+  error: Schema.NullOr(Schema.String),
+  proposals: Schema.Array(MemoryProposalTile),
+});
+export type MemoryProposalsSnapshot = typeof MemoryProposalsSnapshot.Type;
+
+export const MemoryApproveInput = Schema.Struct({
+  proposalId: Schema.String,
+  edits: Schema.optional(
+    Schema.Struct({
+      headline: Schema.optional(Schema.String),
+      fields: Schema.optional(
+        Schema.Struct({
+          claim: Schema.optional(Schema.String),
+          why: Schema.optional(Schema.String),
+          rejected: Schema.optional(Schema.String),
+        }),
+      ),
+      scope: Schema.optional(Schema.String),
+      purpose: Schema.optional(Schema.String),
+      topic: Schema.optional(Schema.String),
+    }),
+  ),
+  supersedes: Schema.optional(Schema.Array(Schema.String)),
+  reason: Schema.optional(Schema.String),
+});
+export type MemoryApproveInput = typeof MemoryApproveInput.Type;
+
+export const MemoryRejectInput = Schema.Struct({
+  proposalId: Schema.String,
+  reason: Schema.optional(Schema.String),
+});
+export type MemoryRejectInput = typeof MemoryRejectInput.Type;
+
+export const MemoryReinforceInput = Schema.Struct({
+  proposalId: Schema.String,
+  recordId: Schema.String,
+});
+export type MemoryReinforceInput = typeof MemoryReinforceInput.Type;
+
+export class MemoryProposalError extends Schema.TaggedError<MemoryProposalError>()(
+  "MemoryProposalError",
+  { detail: Schema.String },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
+const MemoryRpcError = Schema.Union([MemoryProposalError, EnvironmentAuthorizationError]);
+
+const WsMemorySubscribeProposalsRpc = Rpc.make(WS_METHODS.memorySubscribeProposals, {
+  payload: Schema.Struct({}),
+  success: MemoryProposalsSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsMemoryApproveRpc = Rpc.make(WS_METHODS.memoryApprove, {
+  payload: MemoryApproveInput,
+  success: Schema.Void,
+  error: MemoryRpcError,
+});
+
+const WsMemoryRejectRpc = Rpc.make(WS_METHODS.memoryReject, {
+  payload: MemoryRejectInput,
+  success: Schema.Void,
+  error: MemoryRpcError,
+});
+
+const WsMemoryReinforceRpc = Rpc.make(WS_METHODS.memoryReinforce, {
+  payload: MemoryReinforceInput,
+  success: Schema.Void,
+  error: MemoryRpcError,
 });
 
 const WsSourceControlPublishRepositoryRpc = Rpc.make(WS_METHODS.sourceControlPublishRepository, {
@@ -2084,6 +2223,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectCloneCancelRpc,
   WsProjectCloneRetryRpc,
   WsSubscribeProjectClonesRpc,
+  WsMemorySubscribeProposalsRpc,
+  WsMemoryApproveRpc,
+  WsMemoryRejectRpc,
+  WsMemoryReinforceRpc,
   WsProjectsListEntriesRpc,
   WsProjectsListIgnoredFilesRpc,
   WsProjectsReadFileRpc,

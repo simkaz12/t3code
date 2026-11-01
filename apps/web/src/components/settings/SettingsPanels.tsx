@@ -56,6 +56,7 @@ import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+import { MemorySettings } from "../memory/MemorySettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
 import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
@@ -1809,9 +1810,12 @@ export function ThreadsSettingsPanel() {
           targetIds={[
             searchableSetting("thread-title-instructions").id,
             searchableSetting("response-streaming").id,
+            searchableSetting("memory-scope").id,
+            searchableSetting("memory-server-url").id,
           ]}
         >
           <ThreadTitleInstructionsSettings />
+          <MemorySettings />
           <SettingsRow
             serverScoped
             settingKeys={["responseStreamingMode"]}

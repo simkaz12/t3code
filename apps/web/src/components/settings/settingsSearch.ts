@@ -689,6 +689,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["generated thread titles prompt custom style naming rename regenerate"],
   },
   {
+    id: "memory-scope",
+    title: "Memory scope",
+    to: "/settings/threads",
+    scope: "project-defaults",
+    searchTerms: ["memory proposals recall tabularium repository name shared partner"],
+  },
+  {
+    id: "memory-server-url",
+    title: "Memory server URL",
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: ["memory proposals tray tabularium agents server address"],
+  },
+  {
     id: "app-version",
     title: "Version",
     to: "/settings/about",

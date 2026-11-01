@@ -12,7 +12,7 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
 import { AiError, McpProtocol, McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import { FetchHttpClient, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import {
   DeviceToolError,
   OrchestratorMcpFailure,
@@ -75,6 +75,9 @@ import {
   DeviceScreenshotToolkit,
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
+import * as MemoryClient from "./toolkits/memory/client.ts";
+import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
+import { MemoryToolkit } from "./toolkits/memory/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 
@@ -1115,6 +1118,11 @@ const layerEnvironmentToolkit = toolkitRegistration(
 
 export const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
 
+const layerMemoryToolkit = toolkitRegistration(MemoryToolkit, MemoryHandlers.layer).pipe(
+  Layer.provide(MemoryClient.layer),
+  Layer.provide(FetchHttpClient.layer),
+);
+
 export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentToolkit,
   AttachmentHandlers.layer,
@@ -1161,6 +1169,7 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  layerMemoryToolkit,
 );
 
 export const layer = layerTools.pipe(Layer.provideMerge(layerMcpTransport));
