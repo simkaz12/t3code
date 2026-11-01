@@ -149,6 +149,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.memoryApprove]: "orchestration",
   [WS_METHODS.memoryReject]: "orchestration",
   [WS_METHODS.memoryReinforce]: "orchestration",
+  [WS_METHODS.memoryGetSettings]: "orchestration",
+  [WS_METHODS.memoryUpdateSettings]: "orchestration",
   [WS_METHODS.projectsListEntries]: "workspace",
   [WS_METHODS.projectsListIgnoredFiles]: "workspace",
   [WS_METHODS.projectsReadFile]: "workspace",

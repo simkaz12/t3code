@@ -1,5 +1,8 @@
-import { useRef } from "react";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { useRef, useState } from "react";
 
+import { useEnvironmentQuery } from "../../state/query";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { Input } from "../ui/input";
 import { SettingResetButton, SettingsRow } from "../settings/settingsLayout";
 import { useSettingsScope } from "../settings/SettingsScopeContext";
@@ -9,6 +12,92 @@ import {
   useScopedSettingsMixed,
   useUpdateScopedSettings,
 } from "../settings/useScopedSettings";
+import { memoryEnvironment } from "./memoryState";
+import {
+  CONFIDENCE_FLOOR_STEP,
+  effectiveMemoryServerUrl,
+  isConfidenceFloorLocked,
+  parseConfidenceFloor,
+  shouldSaveConfidenceFloor,
+} from "./memorySettings.logic";
+
+function CleanerConfidenceFloorRow() {
+  const { target } = useSettingsScope();
+  const environmentId = target?.environmentId ?? null;
+  const memoryServerUrl = effectiveMemoryServerUrl(target);
+  const query = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : memoryEnvironment.settings({ environmentId, input: { memoryServerUrl } }),
+  );
+  const updateFloor = useAtomCommand(memoryEnvironment.updateSettings, { reportFailure: false });
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const edited = useRef(false);
+  const saved = query.isSuccess ? (query.data?.cleanerConfidenceFloor ?? null) : null;
+  const locked = isConfidenceFloorLocked({ saved, saving, refreshing: query.isPending });
+  const status = query.error ?? (query.isSuccess ? null : "Loading the server value.");
+
+  const save = async (raw: string) => {
+    const parsed = parseConfidenceFloor(raw);
+    if (!parsed.valid) {
+      setFeedback(parsed.message);
+      return;
+    }
+    if (environmentId === null || !shouldSaveConfidenceFloor(parsed, saved)) {
+      setFeedback(null);
+      return;
+    }
+
+    setSaving(true);
+    const result = await updateFloor({
+      environmentId,
+      input: { cleanerConfidenceFloor: parsed.value },
+    });
+    if (result._tag === "Success") {
+      setFeedback(null);
+      query.refresh();
+      setSaving(false);
+      return;
+    }
+
+    setSaving(false);
+    const error = squashAtomCommandFailure(result);
+    setFeedback(error instanceof Error ? error.message : "The floor was not saved.");
+  };
+
+  return (
+    <SettingsRow
+      {...searchableSetting("memory-cleaner-confidence")}
+      description="Lowest Jev confidence at which the weekly memory cleaner proposes a replacement or a retirement. Stored on the memory server and shared by every machine that uses it."
+    >
+      <div className="mt-3 max-w-md pb-3.5">
+        <Input
+          key={`${environmentId}:${saved}`}
+          aria-label="Cleaner confidence floor"
+          type="number"
+          min={0}
+          max={1}
+          step={CONFIDENCE_FLOOR_STEP}
+          disabled={locked}
+          defaultValue={saved ?? ""}
+          onChange={() => {
+            edited.current = true;
+          }}
+          onBlur={(event) => {
+            const raw = event.target.value;
+            if (edited.current) void save(raw);
+            edited.current = false;
+          }}
+        />
+        {feedback !== null ? <p className="mt-1.5 text-xs text-destructive">{feedback}</p> : null}
+        {feedback === null && status !== null ? (
+          <p className="mt-1.5 text-xs text-muted-foreground">{status}</p>
+        ) : null}
+      </div>
+    </SettingsRow>
+  );
+}
 
 export function MemorySettings() {
   const settings = useScopedSettings();
@@ -86,6 +175,7 @@ export function MemorySettings() {
           />
         </div>
       </SettingsRow>
+      <CleanerConfidenceFloorRow />
     </>
   );
 }

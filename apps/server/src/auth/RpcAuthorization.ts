@@ -147,6 +147,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.memoryApprove]: AuthOrchestrationOperateScope,
   [WS_METHODS.memoryReject]: AuthOrchestrationOperateScope,
   [WS_METHODS.memoryReinforce]: AuthOrchestrationOperateScope,
+  [WS_METHODS.memoryGetSettings]: AuthOrchestrationReadScope,
+  [WS_METHODS.memoryUpdateSettings]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsListEntries]: AuthFilesystemReadScope,
   [WS_METHODS.projectsListIgnoredFiles]: AuthFilesystemReadScope,
   [WS_METHODS.projectsReadFile]: AuthFilesystemReadScope,
