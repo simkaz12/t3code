@@ -22,6 +22,7 @@ const now = DateTime.makeUnsafe("2026-04-20T00:00:00.000Z");
 const decodeOrchestrationV2TurnItemJson = Schema.decodeUnknownSync(OrchestrationV2TurnItemJson);
 const encodeOrchestrationV2TurnItemJson = Schema.encodeSync(OrchestrationV2TurnItemJson);
 const decodeOrchestrationV2Subagent = Schema.decodeUnknownSync(OrchestrationV2Subagent);
+const encodeOrchestrationV2ThreadShellJson = Schema.encodeSync(OrchestrationV2ThreadShellJson);
 const encodeOrchestrationV2SubagentJson = Schema.encodeSync(OrchestrationV2SubagentJson);
 const decodeOrchestrationV2ProviderThreadJson = Schema.decodeUnknownSync(
   OrchestrationV2ProviderThreadJson,
@@ -448,42 +449,60 @@ describe("orchestration V2 contracts", () => {
 });
 
 describe("thread open stats", () => {
+  const shell = {
+    id: "thread-test",
+    projectId: "project-test",
+    title: "Thread",
+    providerInstanceId: "codex",
+    modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    activeProviderThreadId: null,
+    lineage: { rootThreadId: "thread-test", parentThreadId: null, relationshipToParent: null },
+    forkedFrom: null,
+    createdBy: "user",
+    creationSource: "mobile",
+    latestRunId: null,
+    activeRunId: null,
+    status: "idle",
+    pendingRuntimeRequest: null,
+    latestVisibleMessage: null,
+    latestUserMessageAt: null,
+    hasActionableProposedPlan: false,
+    itemCount: 0,
+    visibleItemCount: 0,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    deletedAt: null,
+  };
+
   it("reads a thread whose open stats this build cannot read, without them", () => {
-    const shell = {
-      id: "thread-test",
-      projectId: "project-test",
-      title: "Thread",
-      providerInstanceId: "codex",
-      modelSelection: { instanceId: "codex", model: "gpt-5.4" },
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      branch: null,
-      worktreePath: null,
-      activeProviderThreadId: null,
-      lineage: { rootThreadId: "thread-test", parentThreadId: null, relationshipToParent: null },
-      forkedFrom: null,
-      createdBy: "user",
-      creationSource: "mobile",
-      latestRunId: null,
-      activeRunId: null,
-      status: "idle",
-      pendingRuntimeRequest: null,
-      latestVisibleMessage: null,
-      latestUserMessageAt: null,
-      hasActionableProposedPlan: false,
-      itemCount: 0,
-      visibleItemCount: 0,
-      createdAt: "2026-10-01T00:00:00.000Z",
-      updatedAt: "2026-10-01T00:00:00.000Z",
-      archivedAt: null,
-      settledOverride: null,
-      settledAt: null,
-      deletedAt: null,
-    };
     const decode = Schema.decodeUnknownSync(OrchestrationV2ThreadShellJson);
     const opens = { openedAt: 1, score: 1, picks: [{ query: "upl", at: 1 }] };
     expect(decode({ ...shell, opens }).opens).toEqual(opens);
     expect(decode({ ...shell, opens: { openedAt: "2026-10-01", score: 1 } }).opens).toBeNull();
+  });
+
+  it("round-trips a harvest checkpoint through the shell JSON codec", () => {
+    const harvest = {
+      at: "2026-11-02T10:00:00.000Z",
+      position: 7,
+      itemId: "item-last",
+      runId: "run-harvest",
+      pendingRunId: "run-pending",
+    };
+    const decode = Schema.decodeUnknownSync(OrchestrationV2ThreadShellJson);
+    const decoded = decode({ ...shell, harvest });
+    expect(decoded.harvest?.at).toEqual(DateTime.makeUnsafe(harvest.at));
+
+    const wire = JSON.parse(JSON.stringify(encodeOrchestrationV2ThreadShellJson(decoded)));
+    expect(wire.harvest).toEqual(harvest);
+    expect(decode(wire)).toEqual(decoded);
   });
 });
 

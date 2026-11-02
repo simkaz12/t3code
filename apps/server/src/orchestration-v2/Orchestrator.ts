@@ -32,6 +32,7 @@ import {
   OrchestrationV2Command,
   type OrchestrationV2InternalCommand,
   type OrchestrationV2LimitRecoveryUpdate,
+  type OrchestrationV2ThreadHarvest,
   type OrchestrationV2ServerCommand,
   type ThreadPullRequestLink,
   type ThreadPullRequestWatch,
@@ -343,6 +344,16 @@ export interface OrchestratorV2Shape {
     readonly commandId: CommandId;
     readonly threadId: ThreadId;
     readonly limitRecovery: OrchestrationV2LimitRecoveryUpdate;
+  }) => Effect.Effect<void, OrchestratorV2Error>;
+  readonly setHarvestCheckpoint: (input: {
+    readonly commandId: CommandId;
+    readonly threadId: ThreadId;
+    readonly harvest: OrchestrationV2ThreadHarvest | null;
+  }) => Effect.Effect<void, OrchestratorV2Error>;
+  readonly setHarvestPendingRun: (input: {
+    readonly commandId: CommandId;
+    readonly threadId: ThreadId;
+    readonly harvestPendingRunId: string | null;
   }) => Effect.Effect<void, OrchestratorV2Error>;
   readonly searchThreadStream: (
     input: OrchestrationV2SearchThreadInput,
@@ -1998,6 +2009,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...(queuedMessage.idleCompaction === undefined
             ? {}
             : { idleCompaction: queuedMessage.idleCompaction }),
+          ...(queuedMessage.harvest === undefined ? {} : { harvest: queuedMessage.harvest }),
         }),
         providerThreadId: queuedProviderThread.id,
         inputIntent: "queued_turn",
@@ -3532,10 +3544,25 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     snooze: command.limitRecovery.snooze ?? previousRecovery?.snooze ?? false,
                     requestId: command.commandId,
                   };
+          const harvestBase = command.harvest === undefined ? thread.harvest : command.harvest;
+          const harvest =
+            command.harvestPendingRunId === undefined
+              ? command.harvest
+              : {
+                  at: now,
+                  position: -1,
+                  itemId: null,
+                  runId: null,
+                  ...harvestBase,
+                  pendingRunId: command.harvestPendingRunId,
+                };
+          const harvestOnly =
+            command.harvest !== undefined || command.harvestPendingRunId !== undefined;
           return {
             ...thread,
             ...(command.title === undefined ? {} : { title: command.title }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
+            ...(harvest === undefined ? {} : { harvest }),
             ...(command.limitRecovery !== undefined &&
             limitRecovery?.snooze === true &&
             Date.parse(limitRecovery.resetAt) > DateTime.toEpochMillis(now)
@@ -3585,7 +3612,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : command.regenerateTitle === false || command.title !== undefined
                 ? { titleRegeneration: null }
                 : {}),
-            updatedAt: now,
+            updatedAt: harvestOnly ? thread.updatedAt : now,
           };
         }
         case "thread.pull-request.link":
@@ -4562,6 +4589,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly scheduledTaskId?: OrchestrationV2ConversationMessage["scheduledTaskId"];
     readonly senderThreadId?: OrchestrationV2ConversationMessage["senderThreadId"];
     readonly idleCompaction?: OrchestrationV2ConversationMessage["idleCompaction"];
+    readonly harvest?: OrchestrationV2ConversationMessage["harvest"];
     readonly delegatedCompletion?: OrchestrationV2ConversationMessage["delegatedCompletion"];
     readonly forceRestart: boolean;
   }) {
@@ -4720,6 +4748,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : { scheduledTaskId: input.scheduledTaskId }),
           ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
           ...(input.idleCompaction === undefined ? {} : { idleCompaction: input.idleCompaction }),
+          ...(input.harvest === undefined ? {} : { harvest: input.harvest }),
           id: input.messageId,
           threadId: input.command.threadId,
           runId: messageInput.runId,
@@ -4740,6 +4769,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : { scheduledTaskId: input.scheduledTaskId }),
           ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
           ...(input.idleCompaction === undefined ? {} : { idleCompaction: input.idleCompaction }),
+          ...(input.harvest === undefined ? {} : { harvest: input.harvest }),
           id: idAllocator.derive.userTurnItem({ messageId: input.messageId }),
           threadId: input.command.threadId,
           runId: messageInput.runId,
@@ -5712,6 +5742,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+        ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
         forceRestart: dispatchMode.type === "restart_active",
       });
       return;
@@ -5947,6 +5978,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+        ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
         id: command.messageId,
         threadId: command.threadId,
         runId,
@@ -6294,6 +6326,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+        ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
         id: command.messageId,
         threadId: command.threadId,
         runId,
@@ -6316,6 +6349,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+        ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
         id: idAllocator.derive.userTurnItem({ messageId: command.messageId }),
         threadId: command.threadId,
         runId,
@@ -7045,6 +7079,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : { scheduledTaskId: command.scheduledTaskId }),
       ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
       ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+      ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
       id: command.messageId,
       threadId: command.threadId,
       runId,
@@ -7067,6 +7102,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : { scheduledTaskId: command.scheduledTaskId }),
       ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
       ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+      ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
       id: idAllocator.derive.userTurnItem({ messageId: command.messageId }),
       threadId: command.threadId,
       runId,
@@ -9446,6 +9482,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(queuedMessage.idleCompaction === undefined
         ? {}
         : { idleCompaction: queuedMessage.idleCompaction }),
+      ...(queuedMessage.harvest === undefined ? {} : { harvest: queuedMessage.harvest }),
       forceRestart: false,
     });
   });
@@ -13831,6 +13868,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : command,
           );
         }),
+      );
+    }),
+    setHarvestCheckpoint: Effect.fn("OrchestratorV2.setHarvestCheckpoint")(function (input) {
+      return threadDispatch.withLock(
+        input.threadId,
+        dispatchWithReceiptEffect({ type: "thread.metadata.update", ...input }),
+      );
+    }),
+    setHarvestPendingRun: Effect.fn("OrchestratorV2.setHarvestPendingRun")(function (input) {
+      return threadDispatch.withLock(
+        input.threadId,
+        dispatchWithReceiptEffect({ type: "thread.metadata.update", ...input }),
       );
     }),
     searchThreadStream: (input) =>
