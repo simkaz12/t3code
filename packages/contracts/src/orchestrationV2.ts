@@ -418,6 +418,15 @@ export const OrchestrationV2LimitRecoveryUpdate = Schema.Struct({
 );
 export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitRecoveryUpdate.Type;
 
+export const OrchestrationV2ThreadHarvest = Schema.Struct({
+  at: Schema.DateTimeUtc,
+  position: Schema.Int,
+  itemId: Schema.NullOr(Schema.String),
+  runId: Schema.NullOr(RunId),
+  pendingRunId: Schema.NullOr(Schema.String),
+});
+export type OrchestrationV2ThreadHarvest = typeof OrchestrationV2ThreadHarvest.Type;
+
 /**
  * `score` is an open count that halves every two weeks, as of `openedAt`.
  * `picks` stores lowercase palette queries, newest first.
@@ -482,6 +491,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
+  harvest: Schema.optional(Schema.NullOr(OrchestrationV2ThreadHarvest)),
   guestShare: Schema.optional(Schema.NullOr(ThreadGuestShare)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -1280,12 +1290,16 @@ export type OrchestrationV2Notification = typeof OrchestrationV2Notification.Typ
 export const OrchestrationV2IdleCompaction = Schema.Literals(["beforeCacheExpires", "onReturn"]);
 export type OrchestrationV2IdleCompaction = typeof OrchestrationV2IdleCompaction.Type;
 
+export const OrchestrationV2HarvestTrigger = Schema.Literals(["idle", "manual"]);
+export type OrchestrationV2HarvestTrigger = typeof OrchestrationV2HarvestTrigger.Type;
+
 export const OrchestrationV2ConversationMessage = Schema.Struct({
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
   scheduledTaskId: Schema.optional(ScheduledTaskId),
   senderThreadId: Schema.optional(ThreadId),
   idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+  harvest: Schema.optional(OrchestrationV2HarvestTrigger),
   /**
    * The message is the script a provider-native workflow run executes, not prose. Clients show
    * the workflow's opening instead and keep the script behind a disclosure.
@@ -1594,6 +1608,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    harvest: Schema.optional(OrchestrationV2HarvestTrigger),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
@@ -2117,6 +2132,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
+  harvest: Schema.optional(Schema.NullOr(OrchestrationV2ThreadHarvest)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -2277,6 +2293,14 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
       }),
     ),
   ),
+  harvest: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        ...OrchestrationV2ThreadHarvest.fields,
+        at: Schema.DateTimeUtcFromString,
+      }),
+    ),
+  ),
   deletedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 }));
 export type OrchestrationV2AppThreadJson = typeof OrchestrationV2AppThreadJson.Type;
@@ -2426,6 +2450,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    harvest: Schema.optional(OrchestrationV2HarvestTrigger),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
@@ -2707,6 +2732,14 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
       Schema.Struct({
         requestId: CommandId,
         startedAt: Schema.DateTimeUtcFromString,
+      }),
+    ),
+  ),
+  harvest: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        ...OrchestrationV2ThreadHarvest.fields,
+        at: Schema.DateTimeUtcFromString,
       }),
     ),
   ),
@@ -3030,6 +3063,9 @@ export const OrchestrationV2Command = Schema.Union([
     /** Reject unless no message or run has landed on this thread. */
     expectedEmpty: Schema.optional(Schema.Boolean),
     limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecoveryUpdate)),
+    harvest: Schema.optional(Schema.NullOr(OrchestrationV2ThreadHarvest)),
+    /** Merge into the thread's current harvest under the thread lock, keeping its other fields. */
+    harvestPendingRunId: Schema.optional(Schema.NullOr(Schema.String)),
     /** Link (object) or unlink (null) a pull request; absent leaves it unchanged. */
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   }),
@@ -3127,6 +3163,7 @@ export const OrchestrationV2Command = Schema.Union([
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    harvest: Schema.optional(OrchestrationV2HarvestTrigger),
     commandId: CommandId,
     threadId: ThreadId,
     messageId: MessageId,

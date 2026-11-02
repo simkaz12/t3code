@@ -1,7 +1,9 @@
 import { OrchestratorMcpFailure, TrimmedNonEmptyString } from "@t3tools/contracts";
+import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
+import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
@@ -21,6 +23,23 @@ const shared = {
     MemoryClient,
   ],
 };
+
+const MemoryHarvestBeginTool = Tool.make("memory_harvest_begin", {
+  ...shared,
+  dependencies: [...shared.dependencies, Orchestrator.OrchestratorV2, Crypto.Crypto],
+  description:
+    "Start a harvest of the calling thread. Stamps the checkpoint and returns `afterPosition` for t3_thread_read and `since`, the time of the previous harvest. Call it first, then read from `afterPosition`, then propose with origin harvest.",
+  success: Schema.Struct({
+    afterPosition: Schema.Int,
+    since: Schema.NullOr(Schema.String),
+    threadId: Schema.String,
+  }),
+})
+  .annotate(Tool.Title, "Start a thread harvest")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, false);
 
 const MemoryProposeTool = Tool.make("memory_propose", {
   ...shared,
@@ -85,4 +104,9 @@ const MemoryGetTool = Tool.make("memory_get", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, true);
 
-export const MemoryToolkit = Toolkit.make(MemoryProposeTool, MemoryRecallTool, MemoryGetTool);
+export const MemoryToolkit = Toolkit.make(
+  MemoryHarvestBeginTool,
+  MemoryProposeTool,
+  MemoryRecallTool,
+  MemoryGetTool,
+);

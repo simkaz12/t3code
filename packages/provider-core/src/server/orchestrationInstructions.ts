@@ -26,7 +26,7 @@ Ordinary coding tasks need no T3 tools.
 
 \`memory_propose\` queues a record for the user to approve; nothing is saved until they do. Propose a gotcha you hit while working (what failed, the cause, the fix), or a decision once it is made, with the alternative you ruled out in \`rejected\`. Never propose status, progress, or session narrative, and skip anything \`memory_recall\` already returns. \`headline\` is under 100 characters and names the topic. \`memory_recall\` searches saved memory before you assume a question is new; \`memory_get\` reads one result in full.
 
-"Harvest this thread": review this thread yourself, call \`memory_propose\` with \`origin: "harvest"\` once per decision and gotcha in it, and tell the user the count. If the tools say memory is not configured, say so and stop.`,
+"Harvest this thread": call \`memory_harvest_begin\` first, read this thread with \`t3_thread_read\` using the returned \`afterPosition\` (view messages, paginate with \`nextPosition\`), then call \`memory_propose\` with \`origin: "harvest"\` once per decision and gotcha in that span, at most five, skipping anything already proposed from this thread, and tell the user the count. A span with nothing durable yields no proposals; say so in one line. If the tools say memory is not configured, say so and stop.`,
 ];
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
