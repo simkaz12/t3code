@@ -1,4 +1,5 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   type EnvironmentId,
   type MemoryApproveInput,
@@ -8,8 +9,11 @@ import {
   type MemoryRejectInput,
   type MemorySupersedeReason,
   ProjectId,
+  type ProjectIconColor,
   type ScopedProjectRef,
 } from "@t3tools/contracts";
+
+import { deriveProjectIdentity } from "../../projectIdentity";
 
 const LOW_CONFIDENCE = 0.6;
 
@@ -39,7 +43,7 @@ export interface TileEdits {
   readonly topic: string;
 }
 
-export const isLowConfidence = (tile: Pick<MemoryProposalTile, "confidence">) =>
+const isLowConfidence = (tile: Pick<MemoryProposalTile, "confidence">) =>
   tile.confidence !== null && tile.confidence < LOW_CONFIDENCE;
 
 const needsAttention = (tile: MemoryProposalTile) => tile.flags.length > 0 || isLowConfidence(tile);
@@ -91,69 +95,6 @@ export function suggestionFor(tile: MemoryProposalTile): TileSuggestion | null {
   if (neighbour === undefined) return null;
 
   return { kind: suggestion.action, neighbour, reasonClass: suggestion.reasonClass };
-}
-
-const MAX_INDIVIDUAL_NOTICES = 3;
-
-export interface TrayNotice {
-  readonly type: "info" | "warning";
-  readonly title: string;
-  readonly description?: string;
-  readonly timeout: number;
-  readonly priority: "low" | "high";
-}
-
-const decisionNotice = (headline: string): TrayNotice => ({
-  type: "warning",
-  title: "Decision proposed",
-  description: headline,
-  timeout: 0,
-  priority: "high",
-});
-
-const factNotice = (headline: string): TrayNotice => ({
-  type: "info",
-  title: "Memory proposed",
-  description: headline,
-  timeout: 5_000,
-  priority: "low",
-});
-
-export function trayNotices(
-  arrived: ReadonlyArray<Pick<MemoryProposalTile, "kind" | "headline">>,
-): ReadonlyArray<TrayNotice> {
-  if (arrived.length <= MAX_INDIVIDUAL_NOTICES) {
-    return arrived.map((tile) =>
-      tile.kind === "decision" ? decisionNotice(tile.headline) : factNotice(tile.headline),
-    );
-  }
-
-  const facts = arrived.filter((tile) => tile.kind === "fact");
-  const decisions = arrived.filter((tile) => tile.kind === "decision");
-  const factBatch: ReadonlyArray<TrayNotice> =
-    facts.length === 0
-      ? []
-      : [
-          {
-            type: "info",
-            title: `${facts.length} memory ${facts.length === 1 ? "proposal" : "proposals"}`,
-            timeout: 5_000,
-            priority: "low",
-          },
-        ];
-  const decisionBatch: ReadonlyArray<TrayNotice> =
-    decisions.length > MAX_INDIVIDUAL_NOTICES
-      ? [
-          {
-            type: "warning",
-            title: `${decisions.length} decisions proposed`,
-            timeout: 0,
-            priority: "high",
-          },
-        ]
-      : decisions.map((tile) => decisionNotice(tile.headline));
-
-  return [...decisionBatch, ...factBatch];
 }
 
 const TARGET_LABELS = {
@@ -392,4 +333,357 @@ export function runTileAction<Result>(
         input: { proposalId: tile.id, recordId: action.recordId },
       });
   }
+}
+
+export const tileKey = (tile: Pick<TrayTile, "environmentId" | "id">) =>
+  `${tile.environmentId}:${tile.id}`;
+
+export const orderedTiles = (tiles: ReadonlyArray<TrayTile>): ReadonlyArray<TrayTile> =>
+  groupTiles(tiles).flatMap((group) => group.tiles);
+
+export function tileGlyph(tile: Pick<MemoryProposalTile, "kind" | "suggestion" | "target">) {
+  if (tile.suggestion?.action === "reinforce") return "≡";
+  if (tile.suggestion?.action === "supersede") return "↻";
+  if (tile.target !== null && tile.target.action !== "promote") return "↻";
+
+  return tile.kind === "decision" ? "◆" : "·";
+}
+
+export interface TileProjectStyle {
+  readonly monogram: string;
+  readonly color: string;
+}
+
+const NEUTRAL_PROJECT_STYLE: TileProjectStyle = {
+  monogram: "··",
+  color: "var(--muted-foreground)",
+};
+
+export function tileProjectStyle(
+  project: Pick<EnvironmentProject, "title" | "projectIcon"> | null,
+): TileProjectStyle {
+  if (project === null) return NEUTRAL_PROJECT_STYLE;
+
+  const derived = deriveProjectIdentity(project.title);
+  const icon = project.projectIcon;
+  const color: ProjectIconColor =
+    icon?.kind === "monogram" || icon?.kind === "lucide" ? icon.color : derived.color;
+
+  return {
+    monogram: icon?.kind === "monogram" ? icon.text : derived.monogram,
+    color: `var(--color-${color}-400)`,
+  };
+}
+
+const SHORT_UNCHANGED_RUN = 4;
+
+export type DiffSegment =
+  | { readonly kind: "same"; readonly words: ReadonlyArray<string> }
+  | {
+      readonly kind: "change";
+      readonly removed: ReadonlyArray<string>;
+      readonly added: ReadonlyArray<string>;
+    };
+
+type MutableChange = { kind: "change"; removed: Array<string>; added: Array<string> };
+type MutableSegment = { kind: "same"; words: Array<string> } | MutableChange;
+
+const splitWords = (text: string) => text.split(/\s+/).filter((word) => word !== "");
+
+function lcsTable(a: ReadonlyArray<string>, b: ReadonlyArray<string>): Array<Array<number>> {
+  const table = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      table[i]![j] =
+        a[i] === b[j] ? table[i + 1]![j + 1]! + 1 : Math.max(table[i + 1]![j]!, table[i]![j + 1]!);
+    }
+  }
+
+  return table;
+}
+
+function rawDiffSegments(a: ReadonlyArray<string>, b: ReadonlyArray<string>) {
+  const table = lcsTable(a, b);
+  const segments: Array<MutableSegment> = [];
+  const keep = (word: string) => {
+    const last = segments.at(-1);
+    if (last?.kind === "same") last.words.push(word);
+    else segments.push({ kind: "same", words: [word] });
+  };
+  const change = (): MutableChange => {
+    const last = segments.at(-1);
+    if (last?.kind === "change") return last;
+
+    const created: MutableChange = { kind: "change", removed: [], added: [] };
+    segments.push(created);
+    return created;
+  };
+
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      keep(a[i]!);
+      i++;
+      j++;
+    } else if (j >= b.length || (i < a.length && table[i + 1]![j]! >= table[i]![j + 1]!)) {
+      change().removed.push(a[i++]!);
+    } else {
+      change().added.push(b[j++]!);
+    }
+  }
+
+  return segments;
+}
+
+export function wordDiff(oldText: string, newText: string): ReadonlyArray<DiffSegment> {
+  const merged: Array<MutableSegment> = [];
+  for (const segment of rawDiffSegments(splitWords(oldText), splitWords(newText))) {
+    const run = merged.at(-1);
+    const before = merged.at(-2);
+    const absorbs =
+      segment.kind === "change" &&
+      run?.kind === "same" &&
+      run.words.length < SHORT_UNCHANGED_RUN &&
+      before?.kind === "change";
+
+    if (absorbs) {
+      merged.pop();
+      before.removed.push(...run.words, ...segment.removed);
+      before.added.push(...run.words, ...segment.added);
+    } else {
+      merged.push(segment);
+    }
+  }
+
+  return merged;
+}
+
+export interface DiffRows {
+  readonly removed: string;
+  readonly added: string;
+}
+
+export function diffRows(segments: ReadonlyArray<DiffSegment>): DiffRows {
+  const changes = segments.filter((segment) => segment.kind === "change");
+
+  return {
+    removed: changes
+      .map((segment) => segment.removed.join(" "))
+      .filter((chunk) => chunk !== "")
+      .join(" … "),
+    added: changes
+      .map((segment) => segment.added.join(" "))
+      .filter((chunk) => chunk !== "")
+      .join(" … "),
+  };
+}
+
+function supersededHeadline(
+  tile: Pick<MemoryProposalTile, "neighbours" | "suggestion" | "target">,
+): string | null {
+  const suggestion = tile.suggestion;
+  if (suggestion?.action === "supersede") {
+    const neighbour = tile.neighbours.find((candidate) => candidate.id === suggestion.recordId);
+    if (neighbour !== undefined) return neighbour.headline;
+  }
+
+  const headline = tile.target?.recordHeadline;
+  return headline === null || headline === undefined || headline.trim() === "" ? null : headline;
+}
+
+export function tileDiff(
+  tile: Pick<MemoryProposalTile, "headline" | "neighbours" | "suggestion" | "target">,
+): ReadonlyArray<DiffSegment> | null {
+  const previous = supersededHeadline(tile);
+  if (previous === null) return null;
+
+  const segments = wordDiff(previous, tile.headline);
+  return segments.some((segment) => segment.kind === "change") ? segments : null;
+}
+
+export const TILE_BUTTONS = ["approve", "reject", "details"] as const;
+export type TileButton = (typeof TILE_BUTTONS)[number];
+
+export function approveAction(tile: MemoryProposalTile, edits?: TileEdits): TileAction {
+  const suggestion = suggestionFor(tile);
+  const extra = edits === undefined ? {} : { edits };
+  if (suggestion?.kind === "supersede") {
+    return {
+      type: "supersede",
+      recordId: suggestion.neighbour.id,
+      reason: suggestion.reasonClass ?? "changed",
+      ...extra,
+    };
+  }
+
+  return { type: "approve", ...extra };
+}
+
+export interface TrayCursorState {
+  readonly keys: ReadonlyArray<string>;
+  readonly cursor: number;
+  readonly button: number | null;
+  readonly marks: ReadonlySet<string>;
+}
+
+export type TrayCursorAction =
+  | { readonly type: "sync"; readonly keys: ReadonlyArray<string> }
+  | { readonly type: "move"; readonly delta: number }
+  | { readonly type: "select"; readonly key: string }
+  | { readonly type: "moveButton"; readonly delta: 1 | -1 }
+  | { readonly type: "clearButton" }
+  | { readonly type: "toggleMark"; readonly key?: string }
+  | { readonly type: "escape" };
+
+export const initialCursorState: TrayCursorState = {
+  keys: [],
+  cursor: 0,
+  button: null,
+  marks: new Set(),
+};
+
+function syncKeys(state: TrayCursorState, keys: ReadonlyArray<string>): TrayCursorState {
+  const surviving = new Set(keys);
+  const cursorKey = state.keys[state.cursor];
+  const keptIndex = cursorKey === undefined ? -1 : keys.indexOf(cursorKey);
+  const removedBefore = state.keys
+    .slice(0, state.cursor)
+    .filter((key) => !surviving.has(key)).length;
+  const cursor =
+    keptIndex >= 0
+      ? keptIndex
+      : Math.max(0, Math.min(keys.length - 1, state.cursor - removedBefore));
+
+  return {
+    keys,
+    cursor,
+    button: keptIndex >= 0 ? state.button : null,
+    marks: new Set([...state.marks].filter((key) => surviving.has(key))),
+  };
+}
+
+export function trayCursorReducer(
+  state: TrayCursorState,
+  action: TrayCursorAction,
+): TrayCursorState {
+  const last = state.keys.length - 1;
+  switch (action.type) {
+    case "sync":
+      return syncKeys(state, action.keys);
+    case "move":
+      return last < 0
+        ? state
+        : {
+            ...state,
+            cursor: Math.max(0, Math.min(last, state.cursor + action.delta)),
+            button: null,
+          };
+    case "select": {
+      const cursor = state.keys.indexOf(action.key);
+      return cursor < 0 || cursor === state.cursor ? state : { ...state, cursor, button: null };
+    }
+    case "moveButton": {
+      if (last < 0) return state;
+
+      const start = state.button ?? (action.delta > 0 ? -1 : TILE_BUTTONS.length);
+      const button = (start + action.delta + TILE_BUTTONS.length) % TILE_BUTTONS.length;
+      return { ...state, button };
+    }
+    case "clearButton":
+      return state.button === null ? state : { ...state, button: null };
+    case "toggleMark": {
+      const key = action.key ?? state.keys[state.cursor];
+      if (key === undefined) return state;
+
+      const marks = new Set(state.marks);
+      if (marks.has(key)) marks.delete(key);
+      else marks.add(key);
+      return { ...state, marks };
+    }
+    case "escape":
+      if (state.button !== null) return { ...state, button: null };
+      return state.marks.size > 0 ? { ...state, marks: new Set() } : state;
+  }
+}
+
+export const escapeBlursList = (state: TrayCursorState) =>
+  state.button === null && state.marks.size === 0;
+
+export function actionTargetKeys(state: TrayCursorState): ReadonlyArray<string> {
+  if (state.marks.size > 0) return state.keys.filter((key) => state.marks.has(key));
+
+  const key = state.keys[state.cursor];
+  return key === undefined ? [] : [key];
+}
+
+export function flashText(actions: ReadonlyArray<TileAction>): string {
+  const counts = { approved: 0, superseded: 0, rejected: 0, reinforced: 0, saved: 0 };
+  for (const action of actions) {
+    if (action.type === "reject") counts.rejected++;
+    else if (action.type === "reinforce") counts.reinforced++;
+    else if (action.edits !== undefined) counts.saved++;
+    else if (action.type === "supersede") counts.superseded++;
+    else counts.approved++;
+  }
+
+  return [
+    counts.approved > 0 ? `Approved ${counts.approved}` : null,
+    counts.superseded > 0 ? `Superseded ${counts.superseded}` : null,
+    counts.rejected > 0 ? `Rejected ${counts.rejected}` : null,
+    counts.reinforced > 0 ? "Reinforced" : null,
+    counts.saved > 0 ? "Saved" : null,
+  ]
+    .filter((part) => part !== null)
+    .join(", ");
+}
+
+export interface DetailField {
+  readonly label: string;
+  readonly lines: ReadonlyArray<string>;
+}
+
+function targetLines(tile: Pick<MemoryProposalTile, "target">): ReadonlyArray<string> {
+  const summary = targetSummary(tile);
+  if (summary === null) return [];
+
+  return [
+    summary.record === null ? null : `${summary.record.label}: ${summary.record.text}`,
+    summary.keeper === null ? null : `${summary.keeper.label}: ${summary.keeper.text}`,
+    summary.sentence,
+    summary.reason === null ? null : `Reason: ${summary.reason}`,
+  ].filter((line) => line !== null);
+}
+
+export function detailFields(tile: MemoryProposalTile): ReadonlyArray<DetailField> {
+  const fields: ReadonlyArray<DetailField> = [
+    { label: "Headline", lines: [tile.headline] },
+    { label: "Claim", lines: [tile.claim] },
+    { label: "Why", lines: [tile.why] },
+    { label: "Rejected", lines: [tile.rejected ?? ""] },
+    { label: "Thread", lines: [tile.threadTitle] },
+    { label: "Branch", lines: [tile.branch ?? ""] },
+    { label: "Origin", lines: [tile.origin] },
+    { label: "Purpose", lines: [tile.purpose ?? ""] },
+    { label: "Scope", lines: [tile.scope] },
+    { label: "Topic", lines: [tile.topic ?? ""] },
+    {
+      label: "Confidence",
+      lines: [tile.confidence === null ? "" : tile.confidence.toFixed(2)],
+    },
+    { label: "Jev flags", lines: [tile.flags.join(", ")] },
+    {
+      label: "Neighbours",
+      lines: tile.neighbours.map((neighbour) =>
+        [neighbour.headline, neighbour.similarity.toFixed(2), neighbour.relation ?? ""]
+          .filter((part) => part !== "")
+          .join(" · "),
+      ),
+    },
+    { label: "Target", lines: targetLines(tile) },
+  ];
+
+  return fields
+    .map((field) => ({ ...field, lines: field.lines.filter((line) => line.trim() !== "") }))
+    .filter((field) => field.lines.length > 0);
 }
