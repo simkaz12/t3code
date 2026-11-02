@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - the stub memory server is a real node:http server.
 import * as NodeHttp from "node:http";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -10,6 +11,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type OrchestrationV2ConversationMessage,
+  type OrchestrationV2ThreadHarvest,
   type Project,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -19,6 +21,7 @@ import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/http";
 
 import * as Environment from "../../../environment/ServerEnvironment.ts";
+import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as Settings from "../../../serverSettings.ts";
@@ -107,6 +110,21 @@ const project = (workspaceRoot: string): Project => ({
   deletedAt: null,
 });
 
+interface HarvestState {
+  current: OrchestrationV2ThreadHarvest | null;
+  items: Array<{ readonly position: number; readonly sourceItemId: string }>;
+  readonly stamped: Array<OrchestrationV2ThreadHarvest | null>;
+}
+
+const harvestState = (itemCount: number): HarvestState => ({
+  current: null,
+  items: Array.from({ length: itemCount }, (_, position) => ({
+    position,
+    sourceItemId: `item:${position}`,
+  })),
+  stamped: [],
+});
+
 interface Recorded {
   readonly method: string;
   readonly url: string;
@@ -192,8 +210,10 @@ const callTool = Effect.fn("memoryTest.call")(function* <A, E, R>(options: {
   readonly memoryScope?: string;
   readonly workspaceRoot?: string;
   readonly messages?: ReadonlyArray<OrchestrationV2ConversationMessage>;
+  readonly harvest?: HarvestState;
   readonly call: (toolkit: Effect.Success<typeof MemoryToolkit>) => Effect.Effect<A, E, R>;
 }) {
+  const harvest = options.harvest ?? harvestState(0);
   const shell = { ...liveThreadShell(threadId), title: "Fix tinker", branch: "feature/tinker" };
   const settings = {
     ...DEFAULT_SERVER_SETTINGS,
@@ -204,6 +224,7 @@ const callTool = Effect.fn("memoryTest.call")(function* <A, E, R>(options: {
         : { [projectId]: { memoryScope: options.memoryScope } },
   };
   const layerDependencies = Layer.mergeAll(
+    NodeCrypto.layer,
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId,
       requestNamespace: "provider:memory",
@@ -217,12 +238,30 @@ const callTool = Effect.fn("memoryTest.call")(function* <A, E, R>(options: {
       issuedAt: 0,
     }),
     Layer.mock(ThreadManagement.ThreadManagementService)({
-      getThreadShell: () => Effect.succeed(shell),
+      getThreadShell: () => Effect.succeed({ ...shell, harvest: harvest.current }),
+      getTimelinePage: (_threadId, page) => {
+        const matching =
+          page.itemId === undefined
+            ? harvest.items.filter((item) => item.position > (page.afterPosition ?? -1))
+            : harvest.items.filter((item) => item.sourceItemId === page.itemId);
+        return Effect.succeed({
+          items: matching.slice(0, page.limit),
+          totalItems: harvest.items.length,
+          hasMore: matching.length > page.limit,
+        }) as never;
+      },
       getProjectThreadRecords: () =>
         Effect.succeed({
           ...idleThreadProjection(shell),
           messages: options.messages ?? [],
         }) as never,
+    }),
+    Layer.mock(Orchestrator.OrchestratorV2)({
+      setHarvestCheckpoint: (input) =>
+        Effect.sync(() => {
+          harvest.current = input.harvest;
+          harvest.stamped.push(input.harvest);
+        }),
     }),
     Layer.mock(Environment.ServerEnvironment)({
       getDescriptor: Effect.succeed({
@@ -404,6 +443,128 @@ it.effect("recalls in the project scope and reads one record", () =>
       expect(recalled).toMatchObject({ results: [{ id: "rec-1", source: "legacy" }] });
       expect(read).toMatchObject({ id: "rec-1", collapsedIds: ["old-1", "old-2"] });
       expect(stub.requests[1]?.url).toBe("/v2/records/rec-1");
+    }),
+  ),
+);
+
+const beginHarvestCall = (stub: { readonly url: string }, harvest: HarvestState) =>
+  callTool({
+    memoryServerUrl: stub.url,
+    harvest,
+    call: (toolkit) => toolkit.handle("memory_harvest_begin", {}).pipe(Stream.unwrap, collect),
+  });
+
+it.effect("stamps the first harvest at the last message and reads from the start", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+      const harvest = harvestState(450);
+
+      const result = yield* beginHarvestCall(stub, harvest);
+
+      expect(result).toEqual({ afterPosition: -1, since: null, threadId });
+      expect(harvest.current).toMatchObject({
+        position: 449,
+        itemId: "item:449",
+        runId: "run:mcp-test",
+        pendingRunId: null,
+      });
+      expect(stub.requests).toEqual([]);
+    }),
+  ),
+);
+
+it.effect(
+  "refuses to begin a harvest and leaves the checkpoint alone when memory is not configured",
+  () =>
+    Effect.gen(function* () {
+      const harvest = harvestState(5);
+
+      const result = yield* beginHarvestCall({ url: "" }, harvest);
+
+      expect(result).toMatchObject({ code: "invalid_request" });
+      expect(JSON.stringify(result)).toContain("not configured");
+      expect(harvest.stamped).toEqual([]);
+      expect(harvest.current).toBeNull();
+    }),
+);
+
+it.effect("returns the previous stamp on the second harvest and moves the checkpoint", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+      const harvest = harvestState(10);
+
+      yield* beginHarvestCall(stub, harvest);
+      const first = harvest.current;
+      harvest.items.push({ position: 10, sourceItemId: "item:10" });
+      const result = yield* beginHarvestCall(stub, harvest);
+
+      expect(result).toEqual({
+        afterPosition: 9,
+        since: first === null ? null : DateTime.formatIso(first.at),
+        threadId,
+      });
+      expect(harvest.current).toMatchObject({ position: 10, itemId: "item:10" });
+      expect(harvest.stamped).toHaveLength(2);
+    }),
+  ),
+);
+
+it.effect("treats a pending-only stamp with position -1 as no previous checkpoint", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+      const harvest = harvestState(5);
+      harvest.current = {
+        at: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
+        position: -1,
+        itemId: null,
+        runId: null,
+        pendingRunId: "run:pending",
+      };
+
+      const result = yield* beginHarvestCall(stub, harvest);
+
+      expect(result).toEqual({ afterPosition: -1, since: null, threadId });
+      expect(harvest.current).toMatchObject({ position: 4, pendingRunId: null });
+    }),
+  ),
+);
+
+it.effect("never returns a position past the last item after a rollback", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+      const harvest = harvestState(10);
+
+      yield* beginHarvestCall(stub, harvest);
+      harvest.items = harvest.items.slice(0, 4);
+      const result = (yield* beginHarvestCall(stub, harvest)) as { afterPosition: number };
+
+      expect(result.afterPosition).toBeLessThanOrEqual(3);
+      expect(harvest.current).toMatchObject({ position: 3, itemId: "item:3" });
+    }),
+  ),
+);
+
+it.effect("follows the checkpoint item when positions shift", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+      const harvest = harvestState(10);
+
+      yield* beginHarvestCall(stub, harvest);
+      harvest.items = [
+        { position: 0, sourceItemId: "item:9" },
+        ...Array.from({ length: 3 }, (_, index) => ({
+          position: index + 1,
+          sourceItemId: `item:new${index}`,
+        })),
+      ];
+      const result = yield* beginHarvestCall(stub, harvest);
+
+      expect(result).toMatchObject({ afterPosition: 0 });
     }),
   ),
 );

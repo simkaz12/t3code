@@ -270,6 +270,11 @@ const validBase = (value: string) =>
       }),
   });
 
+export const configuredBase = (memoryServerUrl: string) =>
+  memoryServerUrl === ""
+    ? Effect.fail(new MemoryClientError({ reason: "not-configured" }))
+    : validBase(memoryServerUrl);
+
 const makeMemoryClient = (
   http: HttpClient.HttpClient,
   baseUrl: Effect.Effect<string, MemoryClientError>,
@@ -426,11 +431,7 @@ export const layer = Layer.effect(
       Effect.mapError(
         () => new MemoryClientError({ reason: "not-configured", detail: "settings unreadable" }),
       ),
-      Effect.flatMap(({ memoryServerUrl }) =>
-        memoryServerUrl === ""
-          ? Effect.fail(new MemoryClientError({ reason: "not-configured" }))
-          : validBase(memoryServerUrl),
-      ),
+      Effect.flatMap(({ memoryServerUrl }) => configuredBase(memoryServerUrl)),
     );
     return MemoryClient.of(makeMemoryClient(http, baseUrl));
   }),

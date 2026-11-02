@@ -3,6 +3,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DeviceId,
@@ -25,6 +26,7 @@ import * as Stream from "effect/Stream";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpClientRequest, HttpRouter } from "effect/http";
 
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReviewGuideService.ts";
@@ -38,6 +40,9 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { MemoryClient } from "./toolkits/memory/client.ts";
+import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
+import { MemoryToolkit } from "./toolkits/memory/tools.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import { PreviewToolkit } from "./toolkits/preview/tools.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
@@ -87,6 +92,21 @@ const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
       Layer.mock(Orchestrator.OrchestratorV2)({}),
       Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
       NodeServices.layer,
+    ),
+  ),
+);
+
+const layerMemoryTest = McpHttpServer.toolkitRegistration(MemoryToolkit, MemoryHandlers.layer).pipe(
+  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.mock(MemoryClient)({}),
+      Layer.mock(Orchestrator.OrchestratorV2)({}),
+      Layer.mock(ProjectService.ProjectService)({}),
+      Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+      Layer.mock(ServerSettings.ServerSettingsService)({}),
+      NodeCrypto.layer,
+      McpToolAccessTestkit.liveThreadsLayer,
     ),
   ),
 );
@@ -457,6 +477,19 @@ it.effect("advertises the compact input schema for every registered tool", () =>
       expect(tool.inputSchema, tool.name).toEqual(advertisedJsonSchema(tools[tool.name]!));
     }
   }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("registers every memory tool with an object-root input schema", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+
+    expect(server.tools.map(({ tool }) => tool.name).toSorted()).toEqual(
+      Object.keys(MemoryToolkit.tools).toSorted(),
+    );
+    for (const { tool } of server.tools) {
+      expect(tool.inputSchema.type, tool.name).toBe("object");
+    }
+  }).pipe(Effect.provide(layerMemoryTest)),
 );
 
 it.effect("checks each preview_act action against that action's own input", () =>
