@@ -1,233 +1,309 @@
-import type { MemorySupersedeReason } from "@t3tools/contracts";
-import { useState } from "react";
+import { Fragment, useState, type CSSProperties } from "react";
 
-import { Badge } from "../ui/badge";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { ProjectId } from "@t3tools/contracts";
+
+import { cn } from "~/lib/utils";
+import { useProject } from "../../state/entities";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
+import { Kbd } from "../ui/kbd";
 import { Textarea } from "../ui/textarea";
 import {
   approveLabel,
-  canExpand,
-  editsFromTile,
-  isDestructiveTarget,
-  isLowConfidence,
-  suggestionFor,
-  targetSummary,
-  type TileAction,
-  type TileEdits,
+  closeLine,
+  diffRows,
+  tileDiff,
+  tileGlyph,
+  tileProjectStyle,
+  type DiffSegment,
+  type TileButton,
   type TrayTile,
 } from "./memoryTray.logic";
 
-const SUPERSEDE_REASONS: ReadonlyArray<MemorySupersedeReason> = [
-  "correction",
-  "changed",
-  "elaborated",
+const CLAIM_CLASS = "m-0 text-xs/4.5 text-card-foreground";
+const META_CLASS = "m-0 text-2xs/4 text-muted-foreground";
+
+const ACT_BUTTONS: ReadonlyArray<{
+  readonly button: TileButton;
+  readonly glyph: string;
+  readonly hover: string;
+  readonly highlighted: string;
+}> = [
+  { button: "approve", glyph: "✓", hover: "hover:text-success", highlighted: "text-success" },
+  {
+    button: "reject",
+    glyph: "✗",
+    hover: "hover:text-destructive",
+    highlighted: "text-destructive",
+  },
+  { button: "details", glyph: "⤢", hover: "hover:text-foreground", highlighted: "text-foreground" },
 ];
 
-const EDIT_FIELDS: ReadonlyArray<{
-  readonly key: keyof TileEdits;
-  readonly label: string;
-  readonly multiline: boolean;
-}> = [
-  { key: "headline", label: "Headline", multiline: false },
-  { key: "claim", label: "Claim", multiline: true },
-  { key: "why", label: "Why", multiline: true },
-  { key: "rejected", label: "Rejected", multiline: true },
-  { key: "scope", label: "Scope", multiline: false },
-  { key: "purpose", label: "Purpose", multiline: false },
-  { key: "topic", label: "Topic", multiline: false },
-];
+function keyedSegments(segments: ReadonlyArray<DiffSegment>) {
+  const size = (segment: DiffSegment) =>
+    segment.kind === "same" ? segment.words.length : segment.removed.length + segment.added.length;
+
+  const entries: Array<{ key: number; segment: DiffSegment }> = [];
+  let key = 0;
+  for (const segment of segments) {
+    entries.push({ key, segment });
+    key += size(segment);
+  }
+
+  return entries;
+}
+
+export function DiffText({ segments }: { segments: ReadonlyArray<DiffSegment> }) {
+  return (
+    <>
+      {keyedSegments(segments).map(({ key, segment }) => (
+        <Fragment key={key}>
+          {key > 0 ? " " : null}
+          {segment.kind === "same" ? (
+            segment.words.join(" ")
+          ) : (
+            <DiffChange removed={segment.removed.join(" ")} added={segment.added.join(" ")} />
+          )}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+function DiffChange({ removed, added }: { removed: string; added: string }) {
+  return (
+    <>
+      {removed === "" ? null : <span className="text-diff-deletion-foreground">{removed}</span>}
+      {removed !== "" && added !== "" ? (
+        <>
+          {" "}
+          <span className="text-muted-foreground">→</span>{" "}
+        </>
+      ) : null}
+      {added === "" ? null : <span className="text-diff-addition-foreground">{added}</span>}
+    </>
+  );
+}
+
+function ClaimBody({ tile, open }: { tile: TrayTile; open: boolean }) {
+  const diff = tileDiff(tile);
+  if (diff === null) {
+    return <p className={cn(CLAIM_CLASS, !open && "line-clamp-2")}>{tile.claim}</p>;
+  }
+  if (open) {
+    return (
+      <p className={CLAIM_CLASS}>
+        <DiffText segments={diff} />
+      </p>
+    );
+  }
+
+  const rows = diffRows(diff);
+  return (
+    <>
+      {rows.removed === "" ? null : (
+        <p className={cn(CLAIM_CLASS, "line-clamp-1")}>
+          <span className="text-diff-deletion-foreground">{rows.removed}</span>
+        </p>
+      )}
+      {rows.added === "" ? null : (
+        <p className={cn(CLAIM_CLASS, "line-clamp-1")}>
+          <span className="text-muted-foreground">→</span>{" "}
+          <span className="text-diff-addition-foreground">{rows.added}</span>
+        </p>
+      )}
+    </>
+  );
+}
+
+function TileBody({ tile, open }: { tile: TrayTile; open: boolean }) {
+  const closes = closeLine(tile);
+
+  return (
+    <>
+      {closes === null ? null : (
+        <p className={cn(META_CLASS, !open && "line-clamp-1")}>Closes: {closes}</p>
+      )}
+      {tile.kind === "defect" && tile.where !== null ? (
+        <p className={cn(META_CLASS, "truncate font-mono")}>{tile.where}</p>
+      ) : null}
+      <ClaimBody tile={tile} open={open} />
+    </>
+  );
+}
+
+function ClaimEditor({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: string;
+  onSave: (claim: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(initial);
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Textarea
+        autoFocus
+        size="sm"
+        aria-label="Claim"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+          } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            event.stopPropagation();
+            onSave(draft);
+          }
+        }}
+      />
+      <div className="-mx-1.5 flex items-center gap-0.5">
+        <Button size="xs" variant="ghost" tabIndex={-1} onClick={() => onSave(draft)}>
+          Save
+          <Kbd>ctrl+enter</Kbd>
+        </Button>
+        <Button size="xs" variant="ghost-muted" tabIndex={-1} onClick={onCancel}>
+          Cancel
+          <Kbd>esc</Kbd>
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export function MemoryTile({
   tile,
+  domId,
+  cursor,
+  marked,
   busy,
-  onAction,
-  onExpand,
+  activeButton,
+  editing,
+  onSelect,
+  onToggleMark,
+  onButton,
+  onSaveClaim,
+  onCancelEdit,
 }: {
   tile: TrayTile;
+  domId: string;
+  cursor: boolean;
+  marked: boolean;
   busy: boolean;
-  onAction: (tile: TrayTile, action: TileAction) => void;
-  onExpand: (tile: TrayTile) => void;
+  activeButton: TileButton | null;
+  editing: boolean;
+  onSelect: () => void;
+  onToggleMark: () => void;
+  onButton: (button: TileButton) => void;
+  onSaveClaim: (claim: string) => void;
+  onCancelEdit: () => void;
 }) {
-  const suggestion = suggestionFor(tile);
-  const target = targetSummary(tile);
-  const [editing, setEditing] = useState(false);
-  const [edits, setEdits] = useState<TileEdits>(() => editsFromTile(tile));
-  const [supersede, setSupersede] = useState(suggestion?.kind === "supersede");
-  const [reason, setReason] = useState<MemorySupersedeReason>(suggestion?.reasonClass ?? "changed");
-  const visibleFields = EDIT_FIELDS.filter(
-    ({ key }) => key !== "rejected" || tile.kind === "decision",
+  const project = useProject(
+    tile.projectId === ""
+      ? null
+      : scopeProjectRef(tile.environmentId, ProjectId.make(tile.projectId)),
   );
-  const editedBody = editing ? { edits } : {};
+  const identity = tileProjectStyle(project);
+  const open = cursor || editing;
+  const labels: Record<TileButton, string> = {
+    approve: approveLabel(tile),
+    reject: "Reject",
+    details: "Details",
+  };
 
   return (
-    <li
+    <div
+      id={domId}
+      role="option"
+      aria-selected={cursor}
+      aria-busy={busy}
       data-memory-tile={tile.id}
-      className="flex flex-col gap-2 rounded-lg border border-border/70 bg-background/60 p-3"
+      style={{ "--project": identity.color } as CSSProperties}
+      className={cn(
+        "surface-clip relative flex flex-col gap-1.5 rounded-none border border-(color:--tile-ring) bg-card py-2 pr-2.75 pl-3.75 text-card-foreground",
+        "[--edge-paint:var(--tile-ring)] [--tile-ring:color-mix(in_srgb,var(--project)_55%,var(--border))]",
+        "before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-(--project)",
+        cursor && "bg-linear-to-b from-foreground/6 to-foreground/6 [--tile-ring:var(--project)]",
+        marked && "before:bg-foreground",
+        busy && "pointer-events-none opacity-60",
+      )}
+      onClick={onSelect}
+      onMouseDown={(event) => {
+        if (event.target instanceof Element && event.target.closest("button")) {
+          event.preventDefault();
+        }
+      }}
     >
-      <div className="flex flex-col gap-1.5">
-        <p className="text-sm font-medium leading-snug">{tile.headline}</p>
-        <div className="flex flex-wrap items-center gap-1">
-          <Badge size="sm" variant={tile.kind === "decision" ? "info" : "secondary"}>
-            {tile.kind}
-          </Badge>
-          <Badge size="sm" variant="outline">
-            {tile.origin}
-          </Badge>
-          <Badge size="sm" variant="outline">
-            {tile.scope}
-          </Badge>
-          {tile.topic ? (
-            <Badge size="sm" variant="outline">
-              {tile.topic}
-            </Badge>
-          ) : null}
-          {tile.purpose ? (
-            <Badge size="sm" variant="outline">
-              {tile.purpose}
-            </Badge>
-          ) : null}
-          {tile.flags.map((flag) => (
-            <Badge key={flag} size="sm" variant="warning">
-              {flag}
-            </Badge>
-          ))}
-          {isLowConfidence(tile) ? (
-            <Badge size="sm" variant="warning">
-              low confidence
-            </Badge>
-          ) : null}
-        </div>
-        <p className="text-xs text-muted-foreground">From {tile.threadTitle}</p>
-      </div>
-
-      {target === null ? null : (
-        <div
-          data-memory-target={target.label}
-          className="flex flex-col gap-0.5 rounded-md bg-warning/8 px-2 py-1.5 text-xs"
+      <div className="flex min-h-4 items-center gap-1.5 text-2xs/4 text-muted-foreground">
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-pressed={marked}
+          aria-label="Mark"
+          className={cn(
+            "mr-1 size-3 flex-none rounded-sm border border-border hover:border-muted-foreground",
+            marked && "border-foreground bg-foreground",
+          )}
+          onClick={onToggleMark}
+        />
+        <span
+          aria-hidden="true"
+          className="grid size-4 flex-none place-items-center rounded-sm text-3xs/none font-semibold text-(--project)"
+          style={{ backgroundColor: "color-mix(in srgb, var(--project) 14%, transparent)" }}
         >
-          {[target.record, target.keeper].map((line) =>
-            line === null ? null : (
-              <span key={line.label} className="min-w-0">
-                {line.label}: <strong>{line.text}</strong>
-                {line.id === null ? null : (
-                  <span className="ml-1 text-3xs text-muted-foreground">{line.id}</span>
-                )}
-              </span>
-            ),
-          )}
-          <span className="text-muted-foreground">{target.sentence}</span>
-          {target.reason === null ? null : (
-            <span className="text-muted-foreground">Reason: {target.reason}</span>
-          )}
+          {identity.monogram}
+        </span>
+        <span aria-hidden="true" className="flex-none">
+          {tileGlyph(tile)}
+        </span>
+        {tile.defectStatus !== null && tile.defectStatus !== "open" ? (
+          <span
+            data-memory-defect-status={tile.defectStatus}
+            className="flex-none rounded-sm border border-border px-1 text-3xs/3.5 uppercase"
+          >
+            {tile.defectStatus}
+          </span>
+        ) : null}
+        <span className="ml-auto flex">
+          {ACT_BUTTONS.map(({ button, glyph, hover, highlighted }) => (
+            <button
+              key={button}
+              type="button"
+              tabIndex={-1}
+              aria-label={labels[button]}
+              disabled={busy}
+              className={cn(
+                "grid size-5 flex-none place-items-center rounded-md text-sm/none",
+                hover,
+                activeButton === button &&
+                  cn(
+                    highlighted,
+                    // oxlint-disable-next-line t3code/no-outset-state-indicators -- the tile head has no clipping ancestor and the owner-approved design offsets the button outline by 1px
+                    "outline outline-1 outline-offset-1 outline-(--project)",
+                  ),
+              )}
+              onClick={() => onButton(button)}
+            >
+              {glyph}
+            </button>
+          ))}
+        </span>
+      </div>
+      {editing ? (
+        <ClaimEditor initial={tile.claim} onSave={onSaveClaim} onCancel={onCancelEdit} />
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <TileBody tile={tile} open={open} />
         </div>
       )}
-
-      {suggestion?.kind === "reinforce" ? (
-        <div className="flex items-center justify-between gap-2 rounded-md bg-warning/8 px-2 py-1.5 text-xs">
-          <span className="min-w-0">
-            Covered by existing record: <strong>{suggestion.neighbour.headline}</strong>
-          </span>
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={busy}
-            onClick={() => onAction(tile, { type: "reinforce", recordId: suggestion.neighbour.id })}
-          >
-            Reinforce existing
-          </Button>
-        </div>
-      ) : null}
-
-      {suggestion?.kind === "supersede" ? (
-        <div className="flex flex-col gap-1.5 rounded-md bg-warning/8 px-2 py-1.5 text-xs">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={supersede}
-              onChange={(event) => setSupersede(event.target.checked)}
-            />
-            <span className="min-w-0">
-              Supersedes this one: <strong>{suggestion.neighbour.headline}</strong>
-            </span>
-          </label>
-          {supersede ? (
-            <div className="flex items-center gap-1">
-              {SUPERSEDE_REASONS.map((option) => (
-                <Button
-                  key={option}
-                  size="xs"
-                  variant={option === reason ? "secondary" : "ghost"}
-                  onClick={() => setReason(option)}
-                >
-                  {option}
-                </Button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {editing ? (
-        <div className="flex flex-col gap-2">
-          {visibleFields.map(({ key, label, multiline }) =>
-            multiline ? (
-              <Textarea
-                key={key}
-                aria-label={label}
-                size="sm"
-                value={edits[key]}
-                onChange={(event) => setEdits({ ...edits, [key]: event.target.value })}
-              />
-            ) : (
-              <Input
-                key={key}
-                aria-label={label}
-                size="sm"
-                value={edits[key]}
-                onChange={(event) => setEdits({ ...edits, [key]: event.target.value })}
-              />
-            ),
-          )}
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-1">
-        <Button
-          size="xs"
-          variant={isDestructiveTarget(tile) ? "destructive-outline" : "default"}
-          disabled={busy}
-          onClick={() =>
-            onAction(
-              tile,
-              suggestion?.kind === "supersede" && supersede
-                ? { type: "supersede", recordId: suggestion.neighbour.id, reason, ...editedBody }
-                : { type: "approve", ...editedBody },
-            )
-          }
-        >
-          {approveLabel(tile)}
-        </Button>
-        <Button size="xs" variant="outline" onClick={() => setEditing(!editing)}>
-          {editing ? "Cancel edit" : "Edit"}
-        </Button>
-        <Button
-          size="xs"
-          variant="ghost-destructive"
-          disabled={busy}
-          onClick={() => onAction(tile, { type: "reject" })}
-        >
-          Reject
-        </Button>
-        <Button
-          size="xs"
-          variant="ghost-muted"
-          disabled={!canExpand(tile)}
-          onClick={() => onExpand(tile)}
-        >
-          Expand
-        </Button>
-      </div>
-    </li>
+    </div>
   );
 }

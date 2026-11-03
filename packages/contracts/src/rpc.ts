@@ -1290,6 +1290,9 @@ const WsSubscribeProjectClonesRpc = Rpc.make(WS_METHODS.subscribeProjectClones, 
 export const MemorySupersedeReason = Schema.Literals(["correction", "changed", "elaborated"]);
 export type MemorySupersedeReason = typeof MemorySupersedeReason.Type;
 
+export const MemoryAudience = Schema.Literals(["decider", "builder", "reviewer", "navigator"]);
+export type MemoryAudience = typeof MemoryAudience.Type;
+
 export const MemoryProposalNeighbour = Schema.Struct({
   id: Schema.String,
   source: Schema.Literals(["v2", "legacy"]),
@@ -1302,15 +1305,32 @@ export type MemoryProposalNeighbour = typeof MemoryProposalNeighbour.Type;
 /** A pending proposal as the tray shows it: the memory server's proposal with its checks flattened. */
 export const MemoryProposalTile = Schema.Struct({
   id: Schema.String,
-  kind: Schema.Literals(["decision", "fact"]),
+  kind: Schema.Literals(["decision", "fact", "defect"]),
   origin: Schema.Literals(["agent", "harvest", "cleaner", "promotion"]),
   headline: Schema.String,
   claim: Schema.String,
-  why: Schema.String,
+  why: Schema.NullOr(Schema.String),
   rejected: Schema.NullOr(Schema.String),
   scope: Schema.String,
   topic: Schema.NullOr(Schema.String),
   purpose: Schema.NullOr(Schema.String),
+  audience: Schema.NullOr(MemoryAudience),
+  reader: Schema.NullOr(Schema.String),
+  section: Schema.Literals(["real", "weak"]),
+  stage: Schema.String,
+  where: Schema.NullOr(Schema.String),
+  trigger: Schema.NullOr(Schema.String),
+  leftBecause: Schema.NullOr(Schema.String),
+  fixHint: Schema.NullOr(Schema.String),
+  impact: Schema.NullOr(Schema.String),
+  defectStatus: Schema.NullOr(Schema.Literals(["open", "taken", "closed"])),
+  takenBy: Schema.NullOr(
+    Schema.Struct({
+      threadId: Schema.String,
+      link: Schema.String,
+      at: Schema.String,
+    }),
+  ),
   threadId: Schema.String,
   threadTitle: Schema.String,
   projectId: Schema.String,
@@ -1333,7 +1353,7 @@ export const MemoryProposalTile = Schema.Struct({
     Schema.Struct({
       recordId: Schema.String,
       source: Schema.Literals(["v2", "legacy"]),
-      action: Schema.Literals(["retire", "supersede", "merge", "promote"]),
+      action: Schema.Literals(["retire", "supersede", "merge", "promote", "close"]),
       replacementId: Schema.optional(Schema.NullOr(Schema.String)),
       recordHeadline: Schema.NullOr(Schema.String),
       replacementHeadline: Schema.NullOr(Schema.String),
@@ -1360,10 +1380,15 @@ export const MemoryApproveInput = Schema.Struct({
       fields: Schema.optional(
         Schema.Struct({
           claim: Schema.optional(Schema.String),
-          why: Schema.optional(Schema.String),
           rejected: Schema.optional(Schema.String),
+          where: Schema.optional(Schema.String),
+          trigger: Schema.optional(Schema.String),
+          leftBecause: Schema.optional(Schema.String),
+          fixHint: Schema.optional(Schema.String),
+          impact: Schema.optional(Schema.String),
         }),
       ),
+      audience: Schema.optional(Schema.NullOr(MemoryAudience)),
       scope: Schema.optional(Schema.String),
       purpose: Schema.optional(Schema.String),
       topic: Schema.optional(Schema.String),
@@ -1376,7 +1401,7 @@ export type MemoryApproveInput = typeof MemoryApproveInput.Type;
 
 export const MemoryRejectInput = Schema.Struct({
   proposalId: Schema.String,
-  reason: Schema.optional(Schema.String),
+  reason: TrimmedNonEmptyString,
 });
 export type MemoryRejectInput = typeof MemoryRejectInput.Type;
 

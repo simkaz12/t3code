@@ -71,7 +71,9 @@ export type T3McpToolSummaryAction =
   | "html-render"
   | "memory-propose"
   | "memory-recall"
-  | "memory-get";
+  | "memory-get"
+  | "memory-take"
+  | "memory-release";
 
 export interface T3McpToolDefinition {
   readonly displayName: string;
@@ -364,6 +366,8 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   memory_propose: tool(["Propose", "Proposing", "Proposed", "a memory"], "memory-propose"),
   memory_recall: tool(["Search", "Searching", "Searched", "memory"], "memory-recall"),
   memory_get: tool(["Read", "Reading", "Read", "a memory"], "memory-get"),
+  memory_take: tool(["Take", "Taking", "Took", "a defect"], "memory-take"),
+  memory_release: tool(["Release", "Releasing", "Released", "a defect"], "memory-release"),
 };
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));

@@ -23,7 +23,13 @@ import {
   newCommandId,
   unavailable,
 } from "../../threadAccess.ts";
-import { configuredBase, flagLabels, MemoryClient, MemoryClientError } from "./client.ts";
+import {
+  configuredBase,
+  flagLabels,
+  MemoryClient,
+  MemoryClientError,
+  type MemoryProposeBody,
+} from "./client.ts";
 import { MemoryToolkit } from "./tools.ts";
 
 const EXCERPT_MESSAGES = 6;
@@ -56,6 +62,49 @@ const memoryFailure = (error: MemoryClientError) =>
 
 const invalid = (message: string) =>
   new OrchestratorMcpFailure({ code: "invalid_request", message });
+
+interface ProposeInput {
+  readonly kind: MemoryProposeBody["kind"];
+  readonly claim: string;
+  readonly rejected?: string | undefined;
+  readonly where?: string | undefined;
+  readonly trigger?: string | undefined;
+  readonly left_because?: string | undefined;
+  readonly fix_hint?: string | undefined;
+  readonly impact?: string | undefined;
+  readonly closes?: string | undefined;
+}
+
+const DEFECT_REQUIRED = ["where", "trigger", "left_because"] as const;
+
+const proposalFields = (input: ProposeInput): MemoryProposeBody["fields"] => {
+  if (input.kind !== "defect")
+    return {
+      claim: input.claim,
+      ...(input.rejected === undefined ? {} : { rejected: input.rejected }),
+    };
+
+  return {
+    claim: input.claim,
+    ...(input.where === undefined ? {} : { where: input.where }),
+    ...(input.trigger === undefined ? {} : { trigger: input.trigger }),
+    ...(input.left_because === undefined ? {} : { left_because: input.left_because }),
+    ...(input.fix_hint === undefined ? {} : { fix_hint: input.fix_hint }),
+    ...(input.impact === undefined ? {} : { impact: input.impact }),
+  };
+};
+
+const proposalProblem = (input: ProposeInput): string | null => {
+  if (input.closes !== undefined) return null;
+  if (input.kind === "decision" && input.rejected === undefined)
+    return "A decision needs `rejected`: the alternative that was ruled out.";
+  if (input.kind !== "defect") return null;
+
+  const missing = DEFECT_REQUIRED.filter((field) => input[field] === undefined);
+  return missing.length === 0
+    ? null
+    : `A defect needs ${missing.map((field) => `\`${field}\``).join(", ")}.`;
+};
 
 const projectScope = Effect.fn("MemoryToolkit.projectScope")(function* (projectId: ProjectId) {
   const settings = yield* (yield* Settings.ServerSettingsService).getSettings.pipe(
@@ -195,8 +244,8 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
     Effect.gen(function* () {
       const { scope, threads, caller } = yield* loadCaller();
       if (caller === undefined) return yield* invalid("memory_propose needs a calling thread.");
-      if (input.kind === "decision" && input.rejected === undefined)
-        return yield* invalid("A decision needs `rejected`: the alternative that was ruled out.");
+      const problem = proposalProblem(input);
+      if (problem !== null) return yield* invalid(problem);
 
       const client = yield* MemoryClient;
       const environment = yield* ServerEnvironment.ServerEnvironment;
@@ -208,11 +257,7 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
         .propose({
           kind: input.kind,
           headline: input.headline,
-          fields: {
-            claim: input.claim,
-            why: input.why,
-            ...(input.rejected === undefined ? {} : { rejected: input.rejected }),
-          },
+          fields: proposalFields(input),
           scope: memoryScope,
           provenance: {
             threadId: caller.id,
@@ -222,8 +267,13 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
             machine: descriptor.label,
             link: bareLink(McpInvocationContext.threadLinkFor(scope, caller.id)),
             excerpt,
+            stage: input.stage ?? "",
           },
           origin: input.origin ?? "agent",
+          ...(input.audience === undefined ? {} : { audience: input.audience }),
+          ...(input.closes === undefined
+            ? {}
+            : { target: { recordId: input.closes, source: "v2", action: "close" } }),
         })
         .pipe(Effect.mapError(memoryFailure));
 
@@ -249,10 +299,38 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
         input.scope ?? (caller === undefined ? undefined : yield* projectScope(caller.projectId));
 
       const results = yield* client
-        .recall({ q: input.query, scope, kind: input.kind, limit: input.limit })
+        .recall({
+          q: input.query,
+          scope,
+          kind: input.kind,
+          audience: input.audience,
+          limit: input.limit,
+        })
         .pipe(Effect.mapError(memoryFailure));
 
       return { results };
+    }),
+  ),
+  memory_take: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const { scope, caller } = yield* loadCaller();
+      if (caller === undefined) return yield* invalid("memory_take needs a calling thread.");
+
+      const client = yield* MemoryClient;
+
+      return yield* client
+        .take(input.recordId, {
+          threadId: caller.id,
+          link: bareLink(McpInvocationContext.threadLinkFor(scope, caller.id)),
+        })
+        .pipe(Effect.mapError(memoryFailure));
+    }),
+  ),
+  memory_release: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const client = yield* MemoryClient;
+
+      return yield* client.release(input.recordId).pipe(Effect.mapError(memoryFailure));
     }),
   ),
   memory_get: McpToolAccess.reads((input) =>

@@ -2010,6 +2010,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ? {}
             : { idleCompaction: queuedMessage.idleCompaction }),
           ...(queuedMessage.harvest === undefined ? {} : { harvest: queuedMessage.harvest }),
+          ...(queuedMessage.memoryNotice === undefined
+            ? {}
+            : { memoryNotice: queuedMessage.memoryNotice }),
         }),
         providerThreadId: queuedProviderThread.id,
         inputIntent: "queued_turn",
@@ -4590,6 +4593,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly senderThreadId?: OrchestrationV2ConversationMessage["senderThreadId"];
     readonly idleCompaction?: OrchestrationV2ConversationMessage["idleCompaction"];
     readonly harvest?: OrchestrationV2ConversationMessage["harvest"];
+    readonly memoryNotice?: OrchestrationV2ConversationMessage["memoryNotice"];
     readonly delegatedCompletion?: OrchestrationV2ConversationMessage["delegatedCompletion"];
     readonly forceRestart: boolean;
   }) {
@@ -4749,6 +4753,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
           ...(input.idleCompaction === undefined ? {} : { idleCompaction: input.idleCompaction }),
           ...(input.harvest === undefined ? {} : { harvest: input.harvest }),
+          ...(input.memoryNotice === undefined ? {} : { memoryNotice: input.memoryNotice }),
           id: input.messageId,
           threadId: input.command.threadId,
           runId: messageInput.runId,
@@ -4770,6 +4775,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
           ...(input.idleCompaction === undefined ? {} : { idleCompaction: input.idleCompaction }),
           ...(input.harvest === undefined ? {} : { harvest: input.harvest }),
+          ...(input.memoryNotice === undefined ? {} : { memoryNotice: input.memoryNotice }),
           id: idAllocator.derive.userTurnItem({ messageId: input.messageId }),
           threadId: input.command.threadId,
           runId: messageInput.runId,
@@ -5743,6 +5749,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
+        ...(command.memoryNotice === undefined ? {} : { memoryNotice: command.memoryNotice }),
         forceRestart: dispatchMode.type === "restart_active",
       });
       return;
@@ -5979,6 +5986,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
+        ...(command.memoryNotice === undefined ? {} : { memoryNotice: command.memoryNotice }),
         id: command.messageId,
         threadId: command.threadId,
         runId,
@@ -6327,6 +6335,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
+        ...(command.memoryNotice === undefined ? {} : { memoryNotice: command.memoryNotice }),
         id: command.messageId,
         threadId: command.threadId,
         runId,
@@ -6350,6 +6359,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
+        ...(command.memoryNotice === undefined ? {} : { memoryNotice: command.memoryNotice }),
         id: idAllocator.derive.userTurnItem({ messageId: command.messageId }),
         threadId: command.threadId,
         runId,
@@ -7080,6 +7090,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
       ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
       ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
+      ...(command.memoryNotice === undefined ? {} : { memoryNotice: command.memoryNotice }),
       id: command.messageId,
       threadId: command.threadId,
       runId,
@@ -7103,6 +7114,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
       ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
       ...(command.harvest === undefined ? {} : { harvest: command.harvest }),
+      ...(command.memoryNotice === undefined ? {} : { memoryNotice: command.memoryNotice }),
       id: idAllocator.derive.userTurnItem({ messageId: command.messageId }),
       threadId: command.threadId,
       runId,
@@ -9483,6 +9495,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? {}
         : { idleCompaction: queuedMessage.idleCompaction }),
       ...(queuedMessage.harvest === undefined ? {} : { harvest: queuedMessage.harvest }),
+      ...(queuedMessage.memoryNotice === undefined
+        ? {}
+        : { memoryNotice: queuedMessage.memoryNotice }),
       forceRestart: false,
     });
   });

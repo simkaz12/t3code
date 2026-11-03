@@ -1,7 +1,9 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 
 import * as Settings from "../../../serverSettings.ts";
@@ -9,8 +11,14 @@ import * as Settings from "../../../serverSettings.ts";
 const REQUEST_TIMEOUT = "10 seconds";
 const ERROR_DETAIL_LIMIT = 300;
 
-export const MemoryKind = Schema.Literals(["decision", "fact"]);
+export const MemoryKind = Schema.Literals(["decision", "fact", "defect"]);
 export type MemoryKind = typeof MemoryKind.Type;
+
+export const MemoryAudience = Schema.Literals(["decider", "builder", "reviewer", "navigator"]);
+export type MemoryAudience = typeof MemoryAudience.Type;
+
+export const MemoryDefectStatus = Schema.Literals(["open", "taken", "closed"]);
+export type MemoryDefectStatus = typeof MemoryDefectStatus.Type;
 
 export const MemoryOrigin = Schema.Literals(["agent", "harvest", "cleaner", "promotion"]);
 export type MemoryOrigin = typeof MemoryOrigin.Type;
@@ -22,14 +30,34 @@ export type MemoryReasonClass = typeof MemoryReasonClass.Type;
 
 export const MemoryProposalFields = Schema.Struct({
   claim: Schema.String,
-  why: Schema.String,
   rejected: Schema.optional(Schema.NullOr(Schema.String)),
+  where: Schema.optional(Schema.String),
+  trigger: Schema.optional(Schema.String),
+  left_because: Schema.optional(Schema.String),
+  fix_hint: Schema.optional(Schema.String),
+  impact: Schema.optional(Schema.String),
 });
+
+const optionalText = Schema.optional(Schema.NullOr(Schema.String));
+
+const legacyWhy = Schema.optional(Schema.NullOr(Schema.String)).pipe(
+  Schema.decodeTo(Schema.String, {
+    decode: SchemaGetter.transformOptional((value) =>
+      Option.some(Option.getOrElse(Option.flatMap(value, Option.fromNullishOr), () => "")),
+    ),
+    encode: SchemaGetter.transform((text: string) => text),
+  }),
+);
 
 export const MemoryRecordFields = Schema.Struct({
   claim: Schema.String,
-  why: Schema.String,
-  rejected: Schema.NullOr(Schema.String),
+  why: legacyWhy,
+  rejected: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultKey(Effect.succeed(null))),
+  where: optionalText,
+  trigger: optionalText,
+  leftBecause: optionalText,
+  fixHint: optionalText,
+  impact: optionalText,
 });
 
 export const MemoryProposalProvenance = Schema.Struct({
@@ -40,12 +68,13 @@ export const MemoryProposalProvenance = Schema.Struct({
   machine: Schema.String,
   link: Schema.String,
   excerpt: Schema.String,
+  stage: Schema.optional(Schema.String),
 });
 
 export const MemoryProposalTarget = Schema.Struct({
   recordId: Schema.String,
   source: MemorySource,
-  action: Schema.Literals(["retire", "supersede", "merge", "promote"]),
+  action: Schema.Literals(["retire", "supersede", "merge", "promote", "close"]),
   replacementId: Schema.optional(Schema.NullOr(Schema.String)),
   recordHeadline: Schema.optional(Schema.NullOr(Schema.String)),
   replacementHeadline: Schema.optional(Schema.NullOr(Schema.String)),
@@ -60,6 +89,20 @@ export interface MemoryProposeBody {
   readonly provenance: typeof MemoryProposalProvenance.Type;
   readonly origin: MemoryOrigin;
   readonly target?: typeof MemoryProposalTarget.Type;
+  readonly audience?: MemoryAudience;
+}
+
+export const MemoryTakenBy = Schema.Struct({
+  threadId: Schema.String,
+  link: Schema.String,
+  at: Schema.String,
+});
+export type MemoryTakenBy = typeof MemoryTakenBy.Type;
+
+export interface MemoryDefectState {
+  readonly recordId: string;
+  readonly defectStatus: MemoryDefectStatus;
+  readonly takenBy: MemoryTakenBy | null;
 }
 
 export const MemoryRelation = Schema.Struct({
@@ -109,6 +152,11 @@ export const MemoryProposal = Schema.Struct({
   target: Schema.NullOr(MemoryProposalTarget),
   purpose: Schema.NullOr(Schema.String),
   topic: Schema.NullOr(Schema.String),
+  audience: optionalText,
+  reader: optionalText,
+  section: Schema.optional(Schema.NullOr(Schema.Literals(["real", "weak"]))),
+  defectStatus: Schema.optional(Schema.NullOr(MemoryDefectStatus)),
+  takenBy: Schema.optional(Schema.NullOr(MemoryTakenBy)),
   checks: MemoryChecks,
   flags: Schema.Array(Schema.String),
   neighbours: Schema.Array(MemoryNeighbour),
@@ -127,6 +175,14 @@ export const MemoryRecallResult = Schema.Struct({
   scope: Schema.String,
   purpose: Schema.NullOr(Schema.String),
   topic: Schema.NullOr(Schema.String),
+  audience: optionalText,
+  reader: optionalText,
+  stage: optionalText,
+  where: optionalText,
+  trigger: optionalText,
+  leftBecause: optionalText,
+  defectStatus: Schema.optional(Schema.NullOr(MemoryDefectStatus)),
+  takenBy: Schema.optional(Schema.NullOr(MemoryTakenBy)),
   score: Schema.Number,
 });
 export type MemoryRecallResult = typeof MemoryRecallResult.Type;
@@ -145,9 +201,14 @@ export interface MemoryApproveBody {
     readonly headline?: string;
     readonly fields?: {
       readonly claim?: string | undefined;
-      readonly why?: string | undefined;
       readonly rejected?: string | null | undefined;
+      readonly where?: string | undefined;
+      readonly trigger?: string | undefined;
+      readonly leftBecause?: string | undefined;
+      readonly fixHint?: string | undefined;
+      readonly impact?: string | undefined;
     };
+    readonly audience?: MemoryAudience | null;
     readonly scope?: string;
     readonly purpose?: string;
     readonly topic?: string;
@@ -160,6 +221,7 @@ export interface MemoryRecallQuery {
   readonly q: string;
   readonly scope?: string | undefined;
   readonly kind?: MemoryKind | undefined;
+  readonly audience?: MemoryAudience | undefined;
   readonly limit?: number | undefined;
 }
 
@@ -202,6 +264,11 @@ export interface MemoryClientShape {
   ) => Effect.Effect<Readonly<Record<string, unknown>>, MemoryClientError>;
   readonly reject: (id: string, reason?: string) => Effect.Effect<void, MemoryClientError>;
   readonly reinforce: (id: string, recordId: string) => Effect.Effect<void, MemoryClientError>;
+  readonly take: (
+    id: string,
+    taker: { readonly threadId: string; readonly link: string },
+  ) => Effect.Effect<MemoryDefectState, MemoryClientError>;
+  readonly release: (id: string) => Effect.Effect<MemoryDefectState, MemoryClientError>;
   readonly getSettings: () => Effect.Effect<MemoryServerSettings, MemoryClientError>;
   readonly updateSettings: (patch: {
     readonly cleanerConfidenceFloor: number;
@@ -230,6 +297,8 @@ function flagLabel(flag: string): string {
   const known = FLAG_LABELS[code];
   if (known !== undefined) return known;
   if (code === "shape_low") return `weak shape: ${humanize(rest[0] ?? "")}`.trimEnd();
+  if (code === "demote") return `weak: ${humanize(rest.join(":"))}`;
+  if (code === "unclear") return `unclear: ${humanize(rest.join(":"))}`;
   if (code === "low_confidence") return `low confidence: ${humanize(rest[0] ?? "")}`.trimEnd();
   return flag;
 }
@@ -250,6 +319,36 @@ const normalizeRecord = (
   body: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> =>
   "collapsedIds" in body ? { ...body, collapsedIds: idList(body.collapsedIds) } : body;
+
+const decodeTakenBy = Schema.decodeUnknownOption(MemoryTakenBy);
+const decodeDefectStatus = Schema.decodeUnknownEffect(MemoryDefectStatus);
+
+const takenByOf = (body: Readonly<Record<string, unknown>>): MemoryTakenBy | null => {
+  const nested = decodeTakenBy(body.takenBy);
+  if (Option.isSome(nested)) return nested.value;
+
+  const { takenThreadId, takenLink, takenAt } = body;
+  return typeof takenThreadId === "string" &&
+    typeof takenLink === "string" &&
+    typeof takenAt === "string"
+    ? { threadId: takenThreadId, link: takenLink, at: takenAt }
+    : null;
+};
+
+const defectStateOf = (
+  recordId: string,
+  body: Readonly<Record<string, unknown>>,
+): Effect.Effect<MemoryDefectState, MemoryClientError> =>
+  decodeDefectStatus(body.defectStatus).pipe(
+    Effect.map((defectStatus) => ({ recordId, defectStatus, takenBy: takenByOf(body) })),
+    Effect.mapError(
+      (error) =>
+        new MemoryClientError({
+          reason: "invalid-response",
+          detail: `no defect status: ${error.message}`,
+        }),
+    ),
+  );
 
 export const flagLabels = (flags: ReadonlyArray<string>): ReadonlyArray<string> =>
   Array.from(new Set(flags.map(flagLabel)));
@@ -364,6 +463,7 @@ const makeMemoryClient = (
             q: query.q,
             scope: query.scope,
             kind: query.kind,
+            audience: query.audience,
             limit: query.limit === undefined ? undefined : String(query.limit),
           },
         }).pipe(
@@ -405,6 +505,22 @@ const makeMemoryClient = (
         "reinforce",
         send("POST", `/proposals/${segment(id)}/reinforce`, { body: { recordId } }).pipe(
           Effect.asVoid,
+        ),
+      ),
+    take: (id, taker) =>
+      call(
+        "take",
+        send("POST", `/records/${segment(id)}/take`, { body: taker }).pipe(
+          Effect.flatMap(decoded(RecordBody)),
+          Effect.flatMap((body) => defectStateOf(id, body)),
+        ),
+      ),
+    release: (id) =>
+      call(
+        "release",
+        send("POST", `/records/${segment(id)}/release`, { body: {} }).pipe(
+          Effect.flatMap(decoded(RecordBody)),
+          Effect.flatMap((body) => defectStateOf(id, body)),
         ),
       ),
     getSettings: () =>

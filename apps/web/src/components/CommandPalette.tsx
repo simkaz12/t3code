@@ -61,6 +61,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  InboxIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -215,6 +216,8 @@ import {
 } from "./CommandPaletteAddProject";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
+import { memoryTrayOpenAtom, useMemoryTray } from "./memory/memoryState";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   CommandPaletteVirtualizedResults,
   scrollCommandPaletteRowIntoView,
@@ -466,6 +469,7 @@ function OpenCommandPaletteDialog(props: {
   };
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const { configured: memoryConfigured } = useMemoryTray();
   const providersByEnvironment = useEnvironmentProviders();
   const { changeThemeItem, changeAppearanceItem, themeEditorItem } = useCommandPaletteThemeItems();
   const currentView = viewStack.at(-1)?.view ?? null;
@@ -1509,6 +1513,20 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/usage" });
     },
   });
+
+  if (memoryConfigured) {
+    actionItems.push({
+      kind: "action",
+      value: "action:memory",
+      searchTerms: ["memory", "proposals", "inbox", "approve", "reject", "facts", "decisions"],
+      title: "Open memory proposals",
+      icon: <InboxIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "memory.open",
+      run: async () => {
+        appAtomRegistry.set(memoryTrayOpenAtom, true);
+      },
+    });
+  }
 
   for (const direction of [1, -1] as const) {
     const title = direction === 1 ? "Focus Next Workspace Area" : "Focus Previous Workspace Area";

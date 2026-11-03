@@ -590,6 +590,8 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.include(readOnlyToolNames, "mcp__t3-code__memory_recall");
     assert.include(readOnlyToolNames, "mcp__t3-code__memory_get");
     assert.notInclude(readOnlyToolNames, "mcp__t3-code__memory_propose");
+    assert.notInclude(readOnlyToolNames, "mcp__t3-code__memory_take");
+    assert.notInclude(readOnlyToolNames, "mcp__t3-code__memory_release");
   });
 });
 

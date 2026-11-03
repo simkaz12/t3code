@@ -9,6 +9,7 @@ import { type MemoryProposalsSnapshot, WS_METHODS } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../../connection/runtime";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../../state/server";
 import type { TrayTile } from "./memoryTray.logic";
 
@@ -74,6 +75,8 @@ const memoryTrayAtom = Atom.make((get): MemoryTrayState => {
 }).pipe(Atom.withLabel("web-memory-tray"));
 
 export const memoryTrayOpenAtom = Atom.make(false).pipe(Atom.withLabel("web-memory-tray-open"));
+
+export const isMemoryTrayConfigured = () => appAtomRegistry.get(memoryTrayAtom).configured;
 
 export function useMemoryTray(): MemoryTrayState {
   return useAtomValue(memoryTrayAtom);
