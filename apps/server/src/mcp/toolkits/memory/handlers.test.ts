@@ -41,7 +41,7 @@ const proposalResponse = {
   status: "pending",
   kind: "fact",
   headline: "tinker needs the oktra-be container",
-  fields: { claim: "claim", why: "why", rejected: null },
+  fields: { claim: "claim", rejected: null },
   scope: "oktra",
   provenance: {
     threadId,
@@ -77,11 +77,22 @@ const proposalResponse = {
       },
     },
   ],
+  audience: "builder",
+  reader: "trap",
+  section: "real",
   suggestion: { action: "reinforce", recordId: "rec-1", source: "v2", reasonClass: null },
   createdAt: "2026-11-01T10:00:00.000Z",
   resolvedAt: null,
   resolution: null,
 };
+
+const takenDefect = {
+  id: "defect-1",
+  kind: "defect",
+  defectStatus: "taken",
+  takenBy: { threadId, link: "t3-thread://x", at: "2026-11-03T10:00:00.000Z" },
+};
+const releasedDefect = { id: "defect-1", kind: "defect", defectStatus: "open", takenBy: null };
 
 const message = (index: number, role: "user" | "assistant", text: string) =>
   ({
@@ -165,7 +176,9 @@ const stubServer = Effect.acquireRelease(
                         source: "legacy",
                         kind: "fact",
                         headline: "Existing tinker note",
-                        fields: { claim: "claim", why: "", rejected: null },
+                        fields: { claim: "claim", rejected: null },
+                        audience: "builder",
+                        reader: "lookup",
                         scope: "oktra",
                         purpose: "pitfall",
                         topic: null,
@@ -174,6 +187,16 @@ const stubServer = Effect.acquireRelease(
                     ],
                   }),
                 );
+              } else if (
+                request.method === "POST" &&
+                url.pathname === "/v2/records/defect-1/take"
+              ) {
+                response.end(JSON.stringify(takenDefect));
+              } else if (
+                request.method === "POST" &&
+                url.pathname === "/v2/records/defect-1/release"
+              ) {
+                response.end(JSON.stringify(releasedDefect));
               } else if (url.pathname === "/v2/records/rec-1") {
                 response.end(
                   JSON.stringify({
@@ -303,7 +326,6 @@ const proposeInput = {
   kind: "fact",
   headline: "tinker needs the oktra-be container",
   claim: "Run tinker inside the container.",
-  why: "Outside it psysh cannot reach the database.",
 } as const;
 
 it.effect("sends provenance, the last six messages and the scope from the setting", () =>
@@ -327,7 +349,7 @@ it.effect("sends provenance, the last six messages and the scope from the settin
       expect(sent?.body).toMatchObject({
         kind: "fact",
         headline: proposeInput.headline,
-        fields: { claim: proposeInput.claim, why: proposeInput.why },
+        fields: { claim: proposeInput.claim },
         scope: "oktra",
         origin: "agent",
         provenance: {
@@ -336,8 +358,12 @@ it.effect("sends provenance, the last six messages and the scope from the settin
           projectId,
           branch: "feature/tinker",
           machine: "laptop",
+          stage: "",
         },
       });
+      expect(JSON.stringify(sent?.body)).not.toContain("why");
+      expect(sent?.body).not.toHaveProperty("audience");
+      expect(sent?.body).not.toHaveProperty("target");
       const body = sent?.body as { provenance: { excerpt: string; link: string } };
       const { provenance } = body;
       expect(provenance.link).toMatch(/^t3-thread:\/\/v2\/.+thread:memory$/);
@@ -401,6 +427,96 @@ it.effect("refuses a decision without a rejected alternative before calling the 
   ),
 );
 
+const defectInput = {
+  kind: "defect",
+  headline: "Cart totals drop the coupon on reload",
+  claim: "The cart total ignores an applied coupon after a page reload.",
+  where: "app/Cart/TotalCalculator.php",
+  trigger: "Apply a coupon, then reload the cart page.",
+  left_because: "The fix belongs to the pricing rewrite.",
+  fix_hint: "Read the coupon from the session in the calculator.",
+  audience: "navigator",
+  stage: "recon",
+} as const;
+
+it.effect("proposes a defect with its fields, audience and stage", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+
+      yield* callTool({
+        memoryServerUrl: stub.url,
+        memoryScope: "oktra",
+        call: (toolkit) =>
+          toolkit.handle("memory_propose", defectInput).pipe(Stream.unwrap, collect),
+      });
+
+      expect(stub.requests[0]?.body).toMatchObject({
+        kind: "defect",
+        headline: defectInput.headline,
+        fields: {
+          claim: defectInput.claim,
+          where: defectInput.where,
+          trigger: defectInput.trigger,
+          left_because: defectInput.left_because,
+          fix_hint: defectInput.fix_hint,
+        },
+        audience: "navigator",
+        provenance: { stage: "recon" },
+      });
+      expect(stub.requests[0]?.body).not.toHaveProperty("target");
+    }),
+  ),
+);
+
+it.effect("refuses a defect missing a required field before calling the server", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+      const { trigger: _trigger, ...incomplete } = defectInput;
+
+      const result = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit.handle("memory_propose", incomplete).pipe(Stream.unwrap, collect),
+      });
+
+      expect(result).toMatchObject({ code: "invalid_request" });
+      expect(JSON.stringify(result)).toContain("trigger");
+      expect(stub.requests).toEqual([]);
+    }),
+  ),
+);
+
+it.effect("turns a proposal with closes into a close tile for that defect", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+
+      yield* callTool({
+        memoryServerUrl: stub.url,
+        memoryScope: "oktra",
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_propose", {
+              kind: "fact",
+              headline: "Coupon survives a cart reload",
+              claim: "The reload test in CartReloadTest now passes with the coupon applied.",
+              closes: "defect-1",
+              stage: "land",
+            })
+            .pipe(Stream.unwrap, collect),
+      });
+
+      expect(stub.requests[0]?.body).toMatchObject({
+        kind: "fact",
+        target: { recordId: "defect-1", source: "v2", action: "close" },
+        provenance: { stage: "land" },
+      });
+    }),
+  ),
+);
+
 it.effect("tells the agent when no memory server is configured", () =>
   Effect.gen(function* () {
     const result = yield* callTool({
@@ -424,7 +540,12 @@ it.effect("recalls in the project scope and reads one record", () =>
         memoryScope: "oktra",
         call: (toolkit) =>
           toolkit
-            .handle("memory_recall", { query: "tinker psysh", kind: "fact", limit: 5 })
+            .handle("memory_recall", {
+              query: "tinker psysh",
+              kind: "fact",
+              audience: "builder",
+              limit: 5,
+            })
             .pipe(Stream.unwrap, collect),
       });
       const read = yield* callTool({
@@ -438,11 +559,51 @@ it.effect("recalls in the project scope and reads one record", () =>
         q: "tinker psysh",
         scope: "oktra",
         kind: "fact",
+        audience: "builder",
         limit: "5",
       });
-      expect(recalled).toMatchObject({ results: [{ id: "rec-1", source: "legacy" }] });
+      expect(recalled).toMatchObject({
+        results: [{ id: "rec-1", source: "legacy", audience: "builder", reader: "lookup" }],
+      });
       expect(read).toMatchObject({ id: "rec-1", collapsedIds: ["old-1", "old-2"] });
       expect(stub.requests[1]?.url).toBe("/v2/records/rec-1");
+    }),
+  ),
+);
+
+it.effect("takes a defect for the calling thread and releases it with no body", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+
+      const taken = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit.handle("memory_take", { recordId: "defect-1" }).pipe(Stream.unwrap, collect),
+      });
+      const released = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit.handle("memory_release", { recordId: "defect-1" }).pipe(Stream.unwrap, collect),
+      });
+
+      expect(stub.requests[0]).toMatchObject({
+        method: "POST",
+        url: "/v2/records/defect-1/take",
+        body: { threadId },
+      });
+      const sent = stub.requests[0]?.body as { link: string };
+      expect(sent.link).toMatch(/^t3-thread:\/\/v2\/.+thread:memory$/);
+      expect(taken).toMatchObject({
+        recordId: "defect-1",
+        defectStatus: "taken",
+        takenBy: { threadId },
+      });
+      expect(stub.requests[1]).toMatchObject({
+        method: "POST",
+        url: "/v2/records/defect-1/release",
+      });
+      expect(released).toEqual({ recordId: "defect-1", defectStatus: "open", takenBy: null });
     }),
   ),
 );

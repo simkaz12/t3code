@@ -175,3 +175,144 @@ it.effect(
       }),
     ),
 );
+
+it.effect("take posts the thread and link to the record and reads the defect status", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer(() => ({
+        status: 200,
+        body: {
+          id: "defect-1",
+          defectStatus: "taken",
+          takenThreadId: "thread-1",
+          takenLink: "t3-thread://x",
+          takenAt: "2026-11-03T10:00:00.000Z",
+        },
+      }));
+
+      const state = yield* withClient(stub.url, (client) =>
+        client.take("defect-1", { threadId: "thread-1", link: "t3-thread://x" }),
+      );
+
+      assert.deepEqual(state, {
+        recordId: "defect-1",
+        defectStatus: "taken",
+        takenBy: { threadId: "thread-1", link: "t3-thread://x", at: "2026-11-03T10:00:00.000Z" },
+      });
+      assert.deepEqual(stub.requests[0], {
+        method: "POST",
+        url: "/v2/records/defect-1/take",
+        body: { threadId: "thread-1", link: "t3-thread://x" },
+      });
+    }),
+  ),
+);
+
+it.effect("release posts to the record and returns it to open", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer(() => ({
+        status: 200,
+        body: { id: "defect-1", defectStatus: "open", takenBy: null },
+      }));
+
+      const state = yield* withClient(stub.url, (client) => client.release("defect-1"));
+
+      assert.deepEqual(state, { recordId: "defect-1", defectStatus: "open", takenBy: null });
+      assert.equal(stub.requests[0]?.method, "POST");
+      assert.equal(stub.requests[0]?.url, "/v2/records/defect-1/release");
+    }),
+  ),
+);
+
+it.effect("take surfaces a 409 from a closed defect as a rejected error", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer(() => ({ status: 409, body: { error: "defect is closed" } }));
+
+      const error = yield* withClient(stub.url, (client) =>
+        client.take("defect-1", { threadId: "thread-1", link: "t3-thread://x" }),
+      ).pipe(Effect.flip);
+
+      assert.equal(error.reason, "rejected");
+      assert.equal(error.status, 409);
+    }),
+  ),
+);
+
+it.effect("recall sends audience and decodes a defect result without why", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer(() => ({
+        status: 200,
+        body: {
+          results: [
+            {
+              id: "defect-1",
+              source: "v2",
+              kind: "defect",
+              headline: "Cart drops the coupon",
+              fields: { claim: "The total ignores the coupon." },
+              scope: "oktra",
+              purpose: null,
+              topic: null,
+              audience: null,
+              reader: "trap",
+              stage: "recon",
+              where: "app/Cart/TotalCalculator.php",
+              trigger: "Reload the cart.",
+              leftBecause: "Pricing rewrite.",
+              defectStatus: "taken",
+              takenBy: {
+                threadId: "thread-1",
+                link: "t3-thread://x",
+                at: "2026-11-03T10:00:00.000Z",
+              },
+              score: 0.7,
+            },
+          ],
+        },
+      }));
+
+      const results = yield* withClient(stub.url, (client) =>
+        client.recall({ q: "coupon", scope: "oktra", kind: "defect", audience: "navigator" }),
+      );
+
+      const query = new URL(stub.requests[0]?.url ?? "", "http://stub").searchParams;
+      assert.equal(query.get("audience"), "navigator");
+      assert.equal(query.get("kind"), "defect");
+      assert.equal(results[0]?.fields.why, "");
+      assert.equal(results[0]?.fields.rejected, null);
+      assert.equal(results[0]?.takenBy?.threadId, "thread-1");
+    }),
+  ),
+);
+
+it.effect("decodes a legacy record that still carries why", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer(() => ({
+        status: 200,
+        body: {
+          results: [
+            {
+              id: "rec-1",
+              source: "legacy",
+              kind: "fact",
+              headline: "Old note",
+              fields: { claim: "claim", why: "an old reason", rejected: null },
+              scope: "oktra",
+              purpose: null,
+              topic: null,
+              score: 0.5,
+            },
+          ],
+        },
+      }));
+
+      const results = yield* withClient(stub.url, (client) => client.recall({ q: "old" }));
+
+      assert.equal(results[0]?.fields.why, "an old reason");
+    }),
+  ),
+);

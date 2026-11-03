@@ -13,6 +13,9 @@ import {
 
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Kbd } from "../ui/kbd";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
@@ -27,15 +30,17 @@ import {
   escapeBlursList,
   flashText,
   initialCursorState,
-  orderedTiles,
   pendingCount,
+  rejectReason,
   runTileAction,
   TILE_BUTTONS,
   tileKey,
+  traySections,
   trayCursorReducer,
   type TileAction,
   type TileButton,
   type TrayTile,
+  visibleTiles,
 } from "./memoryTray.logic";
 
 const STATUS_MS = 2_000;
@@ -49,6 +54,7 @@ const LEGEND: ReadonlyArray<readonly [string, string]> = [
   ["r", "reject"],
   ["e", "edit"],
   ["o", "details"],
+  ["w", "weak"],
   ["esc", "clear"],
 ];
 
@@ -103,6 +109,97 @@ function TrayFooter({
   );
 }
 
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <div role="presentation" className="px-px pt-1 text-2xs/4 font-medium text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function WeakHeader({
+  count,
+  open,
+  onToggle,
+}: {
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div role="presentation" className="px-px pt-1">
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-expanded={open}
+        data-memory-weak-toggle
+        className="flex w-full items-center gap-1 text-left text-2xs/4 font-medium text-muted-foreground hover:text-foreground"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onToggle}
+      >
+        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+        Weak ({count})
+      </button>
+    </div>
+  );
+}
+
+function RejectReasonBar({
+  label,
+  onSubmit,
+  onCancel,
+}: {
+  label: string;
+  onSubmit: (reason: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const reason = rejectReason(draft);
+
+  return (
+    <div data-memory-reject className="flex flex-none flex-col gap-1.5 border border-border p-2">
+      <span className="truncate text-2xs/4 text-muted-foreground">Reject {label}</span>
+      <Input
+        autoFocus
+        size="sm"
+        aria-label="Reject reason"
+        placeholder="Why is this not worth keeping?"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            event.stopPropagation();
+            if (reason !== null) onSubmit(reason);
+          }
+        }}
+      />
+      <div className="-mx-1.5 flex items-center gap-0.5">
+        <Button
+          size="xs"
+          variant="ghost-destructive"
+          tabIndex={-1}
+          disabled={reason === null}
+          onClick={() => reason !== null && onSubmit(reason)}
+        >
+          Reject
+          <Kbd>enter</Kbd>
+        </Button>
+        <Button size="xs" variant="ghost-muted" tabIndex={-1} onClick={onCancel}>
+          Cancel
+          <Kbd>esc</Kbd>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function MemoryTrayBody({
   listRef,
   errors,
@@ -113,11 +210,15 @@ function MemoryTrayBody({
   tiles: ReadonlyArray<TrayTile>;
 }) {
   const listId = useId();
-  const ordered = orderedTiles(tiles);
+  const [weakOpen, setWeakOpen] = useState(false);
+  const sections = traySections(tiles);
+  const allTiles = [...sections.real, ...sections.weak];
+  const ordered = visibleTiles(tiles, weakOpen);
   const keys = ordered.map(tileKey);
   const [cursorState, dispatch] = useReducer(trayCursorReducer, initialCursorState);
   const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(new Set());
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [rejectingKeys, setRejectingKeys] = useState<ReadonlyArray<string> | null>(null);
   const [detailsKey, setDetailsKey] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -132,7 +233,9 @@ function MemoryTrayBody({
   const cursorIndex = cursorState.cursor;
   const cursorTile = ordered[cursorIndex];
   const cursorKey = cursorTile === undefined ? null : tileKey(cursorTile);
-  const detailsTile = ordered.find((tile) => tileKey(tile) === detailsKey) ?? null;
+  const detailsTile = allTiles.find((tile) => tileKey(tile) === detailsKey) ?? null;
+  const rejectingTiles =
+    rejectingKeys === null ? [] : allTiles.filter((tile) => rejectingKeys.includes(tileKey(tile)));
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the cursor tile into view once the DOM has the new open tile
   useEffect(() => {
@@ -191,13 +294,30 @@ function MemoryTrayBody({
   const approveTargets = () =>
     void perform(targetTiles().map((tile) => ({ tile, action: approveAction(tile) })));
 
-  const rejectTargets = () =>
-    void perform(targetTiles().map((tile) => ({ tile, action: { type: "reject" } })));
+  const startReject = (requested: ReadonlyArray<TrayTile>) => {
+    if (requested.length > 0) setRejectingKeys(requested.map(tileKey));
+  };
+
+  const closeReject = () => {
+    setRejectingKeys(null);
+    listRef.current?.focus({ preventScroll: true });
+  };
+
+  const submitReject = (reason: string) => {
+    const planned = rejectingTiles.map((tile) => ({
+      tile,
+      action: { type: "reject", reason } satisfies TileAction,
+    }));
+    closeReject();
+    void perform(planned);
+  };
+
+  const rejectTargets = () => startReject(targetTiles());
 
   const pressButton = (tile: TrayTile, button: TileButton) => {
     if (button === "details") setDetailsKey(tileKey(tile));
     else if (button === "approve") void perform([{ tile, action: approveAction(tile) }]);
-    else void perform([{ tile, action: { type: "reject" } }]);
+    else startReject([tile]);
   };
 
   const cancelEdit = () => {
@@ -218,7 +338,7 @@ function MemoryTrayBody({
     ]);
   };
 
-  const handleDetails = (action: DetailsAction) => {
+  const handleDetails = (action: DetailsAction, audience: string) => {
     const tile = detailsTile;
     setDetailsKey(null);
     if (tile === null || action === "close") return;
@@ -226,9 +346,11 @@ function MemoryTrayBody({
     if (action === "reinforce" && tile.suggestion !== null) {
       void perform([{ tile, action: { type: "reinforce", recordId: tile.suggestion.recordId } }]);
     } else if (action === "approve") {
-      void perform([{ tile, action: approveAction(tile) }]);
+      const edits =
+        audience === (tile.audience ?? "") ? undefined : { ...editsFromTile(tile), audience };
+      void perform([{ tile, action: approveAction(tile, edits) }]);
     } else if (action === "reject") {
-      void perform([{ tile, action: { type: "reject" } }]);
+      startReject([tile]);
     }
   };
 
@@ -281,6 +403,9 @@ function MemoryTrayBody({
       case "o":
         setDetailsKey(cursorKey);
         break;
+      case "w":
+        if (sections.weak.length > 0) setWeakOpen((current) => !current);
+        break;
       case "?":
         setLegendOpen((current) => !current);
         break;
@@ -296,6 +421,32 @@ function MemoryTrayBody({
     event.stopPropagation();
   };
 
+  const renderTile = (tile: TrayTile, index: number) => {
+    const key = tileKey(tile);
+
+    return (
+      <MemoryTile
+        key={key}
+        tile={tile}
+        domId={`${listId}-${index}`}
+        cursor={index === cursorState.cursor}
+        marked={cursorState.marks.has(key)}
+        busy={busyKeys.has(key)}
+        activeButton={
+          index === cursorState.cursor && cursorState.button !== null
+            ? (TILE_BUTTONS[cursorState.button] ?? null)
+            : null
+        }
+        editing={editingKey === key}
+        onSelect={() => dispatch({ type: "select", key })}
+        onToggleMark={() => dispatch({ type: "toggleMark", key })}
+        onButton={(button) => pressButton(tile, button)}
+        onSaveClaim={(claim) => saveClaim(tile, claim)}
+        onCancelEdit={cancelEdit}
+      />
+    );
+  };
+
   return (
     <div className="flex max-h-[70vh] flex-col gap-2">
       {errors.map((error) => (
@@ -303,7 +454,7 @@ function MemoryTrayBody({
           {error}
         </p>
       ))}
-      {ordered.length === 0 ? (
+      {tiles.length === 0 ? (
         <p className="text-xs text-muted-foreground">Nothing waiting for approval.</p>
       ) : (
         <div
@@ -316,32 +467,37 @@ function MemoryTrayBody({
           className="flex min-h-0 flex-col gap-2 overflow-y-auto p-px outline-none"
           onKeyDown={handleKeyDown}
         >
-          {ordered.map((tile, index) => {
-            const key = tileKey(tile);
-            return (
-              <MemoryTile
-                key={key}
-                tile={tile}
-                domId={`${listId}-${index}`}
-                cursor={index === cursorState.cursor}
-                marked={cursorState.marks.has(key)}
-                busy={busyKeys.has(key)}
-                activeButton={
-                  index === cursorState.cursor && cursorState.button !== null
-                    ? (TILE_BUTTONS[cursorState.button] ?? null)
-                    : null
-                }
-                editing={editingKey === key}
-                onSelect={() => dispatch({ type: "select", key })}
-                onToggleMark={() => dispatch({ type: "toggleMark", key })}
-                onButton={(button) => pressButton(tile, button)}
-                onSaveClaim={(claim) => saveClaim(tile, claim)}
-                onCancelEdit={cancelEdit}
-              />
-            );
-          })}
+          <SectionLabel>{`Proposals (${sections.real.length})`}</SectionLabel>
+          {sections.real.length === 0 ? (
+            <p role="presentation" className="m-0 text-xs text-muted-foreground">
+              Nothing waiting for approval.
+            </p>
+          ) : null}
+          {sections.real.map((tile, index) => renderTile(tile, index))}
+          {sections.weak.length > 0 ? (
+            <WeakHeader
+              count={sections.weak.length}
+              open={weakOpen}
+              onToggle={() => setWeakOpen((current) => !current)}
+            />
+          ) : null}
+          {weakOpen
+            ? sections.weak.map((tile, index) => renderTile(tile, sections.real.length + index))
+            : null}
         </div>
       )}
+      {rejectingTiles.length > 0 ? (
+        <RejectReasonBar
+          key={rejectingKeys?.join("|")}
+          label={
+            rejectingTiles.length === 1
+              ? (rejectingTiles[0]?.headline ?? "")
+              : `${rejectingTiles.length} tiles`
+          }
+          onSubmit={submitReject}
+          onCancel={closeReject}
+        />
+      ) : null}
       <TrayFooter
         status={status}
         tileCount={ordered.length}

@@ -13,12 +13,14 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { FetchHttpClient } from "effect/http";
 
 import * as Scheduler from "../scheduling/Scheduler.ts";
+import * as MemoryNoticeService from "./MemoryNoticeService.ts";
 import {
   flagLabels,
   layer as memoryClientLayer,
@@ -87,6 +89,13 @@ const tileTarget = (target: MemoryProposal["target"]): MemoryProposalTile["targe
         replacementHeadline: target.replacementHeadline ?? null,
       };
 
+const AUDIENCES: ReadonlyArray<string> = ["decider", "builder", "reviewer", "navigator"];
+
+const tileAudience = (audience: string | null | undefined): MemoryProposalTile["audience"] =>
+  audience !== null && audience !== undefined && AUDIENCES.includes(audience)
+    ? (audience as MemoryProposalTile["audience"])
+    : null;
+
 export function toTile(proposal: MemoryProposal): MemoryProposalTile {
   const { provenance, fields } = proposal;
 
@@ -96,11 +105,22 @@ export function toTile(proposal: MemoryProposal): MemoryProposalTile {
     origin: proposal.origin,
     headline: proposal.headline,
     claim: fields.claim,
-    why: fields.why,
+    why: fields.why === "" ? null : fields.why,
     rejected: fields.rejected,
     scope: proposal.scope,
     topic: proposal.topic,
     purpose: proposal.purpose,
+    audience: tileAudience(proposal.audience),
+    reader: proposal.reader ?? null,
+    section: proposal.section ?? "real",
+    stage: provenance.stage ?? "",
+    where: fields.where ?? null,
+    trigger: fields.trigger ?? null,
+    leftBecause: fields.leftBecause ?? null,
+    fixHint: fields.fixHint ?? null,
+    impact: fields.impact ?? null,
+    defectStatus: proposal.defectStatus ?? null,
+    takenBy: proposal.takenBy ?? null,
     threadId: provenance.threadId,
     threadTitle: provenance.threadTitle,
     projectId: provenance.projectId,
@@ -131,6 +151,7 @@ const approveBody = (input: MemoryApproveInput): MemoryApproveBody => ({
         edits: {
           ...(input.edits.headline === undefined ? {} : { headline: input.edits.headline }),
           ...(input.edits.fields === undefined ? {} : { fields: input.edits.fields }),
+          ...(input.edits.audience === undefined ? {} : { audience: input.edits.audience }),
           ...(input.edits.scope === undefined ? {} : { scope: input.edits.scope }),
           ...(input.edits.purpose === undefined ? {} : { purpose: input.edits.purpose }),
           ...(input.edits.topic === undefined ? {} : { topic: input.edits.topic }),
@@ -140,34 +161,85 @@ const approveBody = (input: MemoryApproveInput): MemoryApproveBody => ({
   ...(input.reason === undefined ? {} : { reason: input.reason }),
 });
 
+const approveOutcome = (input: MemoryApproveInput): MemoryNoticeService.MemoryNoticeOutcome =>
+  input.supersedes !== undefined && input.supersedes.length > 0 ? "superseded" : "approved";
+
+const noticeEntry = (
+  tile: MemoryProposalTile,
+  outcome: MemoryNoticeService.MemoryNoticeOutcome,
+  details: { readonly reason?: string | undefined; readonly edited?: boolean } = {},
+): MemoryNoticeService.MemoryNoticeEntry => ({
+  threadId: tile.threadId,
+  headline: tile.headline,
+  outcome,
+  ...(details.reason === undefined ? {} : { reason: details.reason }),
+  edited: details.edited ?? false,
+});
+
 const proposalError = (error: MemoryClientError) =>
   new MemoryProposalError({ detail: error.message });
 
 export const make = Effect.gen(function* () {
   const client = yield* MemoryClient;
+  const notice = yield* MemoryNoticeService.MemoryNoticeService;
   const scheduler = yield* Scheduler.Scheduler;
   const state = yield* SubscriptionRef.make(EMPTY_SNAPSHOT);
   const lastPollAt = yield* Ref.make<number | null>(null);
+  const inFlight = yield* Ref.make<ReadonlySet<string>>(new Set());
+  const settledSincePoll = yield* Ref.make<ReadonlySet<string>>(new Set());
 
   const publish = Effect.fn("MemoryProposalPoller.publish")(function* (
     next: MemoryProposalsSnapshot,
   ) {
-    const current = yield* SubscriptionRef.get(state);
-    if (Equal.equals(current, next)) return;
+    return yield* SubscriptionRef.modifySomeEffect(state, (current) =>
+      Ref.get(settledSincePoll).pipe(
+        Effect.map((settled) => {
+          const published: MemoryProposalsSnapshot = {
+            ...next,
+            proposals: next.proposals.filter((tile) => !settled.has(tile.id)),
+          };
 
-    yield* SubscriptionRef.set(state, next);
+          return [
+            published,
+            Equal.equals(current, published) ? Option.none() : Option.some(published),
+          ] as const;
+        }),
+      ),
+    );
+  });
+
+  const recordVanished = Effect.fn("MemoryProposalPoller.recordVanished")(function* (
+    before: ReadonlyArray<MemoryProposalTile>,
+    after: ReadonlyArray<MemoryProposalTile>,
+  ) {
+    const remaining = new Set(after.map((tile) => tile.id));
+    const acting = yield* Ref.get(inFlight);
+    const settled = yield* Ref.get(settledSincePoll);
+    const vanished = before.filter(
+      (tile) => !remaining.has(tile.id) && !acting.has(tile.id) && !settled.has(tile.id),
+    );
+
+    yield* Effect.forEach(
+      vanished,
+      (tile) => notice.record(noticeEntry(tile, "resolved elsewhere")),
+      {
+        discard: true,
+      },
+    );
   });
 
   const poll = Effect.fn("MemoryProposalPoller.poll")(function* () {
+    yield* Ref.set(settledSincePoll, new Set());
     const outcome = yield* client.pending().pipe(Effect.result);
     const current = yield* SubscriptionRef.get(state);
 
     if (outcome._tag === "Success") {
-      yield* publish({
-        configured: true,
-        error: null,
-        proposals: outcome.success.map(toTile),
-      });
+      const proposals = outcome.success.map(toTile);
+      yield* recordVanished(current.proposals, proposals);
+
+      const published = yield* publish({ configured: true, error: null, proposals });
+      const acting = yield* Ref.get(inFlight);
+      if (published.proposals.length === 0 && acting.size === 0) yield* notice.flush();
       return;
     }
     if (outcome.failure.reason === "not-configured") {
@@ -188,29 +260,117 @@ export const make = Effect.gen(function* () {
 
   yield* scheduler.register("memory-proposals", pollWhenDue);
 
-  const dropTile = (proposalId: string) =>
-    SubscriptionRef.update(state, (current) => ({
+  const enterFlight = (proposalId: string) =>
+    Ref.modify(inFlight, (acting) =>
+      acting.has(proposalId)
+        ? ([false, acting] as const)
+        : ([true, new Set(acting).add(proposalId)] as const),
+    ).pipe(
+      Effect.flatMap((entered) =>
+        entered
+          ? Effect.void
+          : Effect.fail(
+              new MemoryProposalError({
+                detail: "That proposal already has an action in progress.",
+              }),
+            ),
+      ),
+    );
+
+  const leaveFlight = (proposalId: string) =>
+    Ref.modify(inFlight, (acting) => {
+      const remaining = new Set(acting);
+      remaining.delete(proposalId);
+      return [remaining.size === 0, remaining] as const;
+    });
+
+  const flushWhenLastSettles = Effect.fn("MemoryProposalPoller.flushWhenLastSettles")(function* (
+    proposalId: string,
+  ) {
+    const last = yield* leaveFlight(proposalId);
+    const current = yield* SubscriptionRef.get(state);
+
+    if (last && current.configured && current.proposals.length === 0) yield* notice.flush();
+  });
+
+  const resolveTile = Effect.fn("MemoryProposalPoller.resolveTile")(function* (
+    tile: MemoryProposalTile | undefined,
+    proposalId: string,
+    outcome: MemoryNoticeService.MemoryNoticeOutcome,
+    details: { readonly reason?: string | undefined; readonly edited?: boolean } = {},
+  ) {
+    if (tile !== undefined) yield* notice.record(noticeEntry(tile, outcome, details));
+
+    yield* Ref.update(settledSincePoll, (settled) => new Set(settled).add(proposalId));
+    yield* SubscriptionRef.update(state, (current) => ({
       ...current,
-      proposals: current.proposals.filter((tile) => tile.id !== proposalId),
+      proposals: current.proposals.filter((candidate) => candidate.id !== proposalId),
     }));
+  });
+
+  const recordAbandoned = Effect.fn("MemoryProposalPoller.recordAbandoned")(function* (
+    tile: MemoryProposalTile | undefined,
+  ) {
+    const current = yield* SubscriptionRef.get(state);
+    if (
+      tile === undefined ||
+      !current.configured ||
+      current.proposals.some((candidate) => candidate.id === tile.id)
+    ) {
+      return;
+    }
+
+    yield* notice.record(noticeEntry(tile, "resolved elsewhere"));
+  });
+
+  const settleOwnerAction = Effect.fn("MemoryProposalPoller.settleOwnerAction")(function* (
+    proposalId: string,
+    call: Effect.Effect<unknown, MemoryClientError>,
+    outcome: MemoryNoticeService.MemoryNoticeOutcome,
+    details: { readonly reason?: string | undefined; readonly edited?: boolean } = {},
+  ) {
+    yield* Effect.acquireUseRelease(
+      enterFlight(proposalId),
+      () =>
+        Effect.gen(function* () {
+          const before = yield* SubscriptionRef.get(state);
+          const tile = before.proposals.find((candidate) => candidate.id === proposalId);
+
+          yield* call.pipe(
+            Effect.tapError(() => recordAbandoned(tile)),
+            Effect.onInterrupt(() => recordAbandoned(tile)),
+            Effect.mapError(proposalError),
+          );
+          yield* resolveTile(tile, proposalId, outcome, details);
+        }),
+      () => flushWhenLastSettles(proposalId),
+    );
+  });
 
   return MemoryProposalPoller.of({
     stream: SubscriptionRef.changes(state),
     approve: Effect.fn("MemoryProposalPoller.approve")(function* (input) {
-      yield* client
-        .approve(input.proposalId, approveBody(input))
-        .pipe(Effect.mapError(proposalError));
-      yield* dropTile(input.proposalId);
+      yield* settleOwnerAction(
+        input.proposalId,
+        client.approve(input.proposalId, approveBody(input)),
+        approveOutcome(input),
+        { edited: input.edits !== undefined },
+      );
     }),
     reject: Effect.fn("MemoryProposalPoller.reject")(function* (input) {
-      yield* client.reject(input.proposalId, input.reason).pipe(Effect.mapError(proposalError));
-      yield* dropTile(input.proposalId);
+      yield* settleOwnerAction(
+        input.proposalId,
+        client.reject(input.proposalId, input.reason),
+        "rejected",
+        { reason: input.reason },
+      );
     }),
     reinforce: Effect.fn("MemoryProposalPoller.reinforce")(function* (input) {
-      yield* client
-        .reinforce(input.proposalId, input.recordId)
-        .pipe(Effect.mapError(proposalError));
-      yield* dropTile(input.proposalId);
+      yield* settleOwnerAction(
+        input.proposalId,
+        client.reinforce(input.proposalId, input.recordId),
+        "reinforced",
+      );
     }),
     getSettings: Effect.fn("MemoryProposalPoller.getSettings")(function* () {
       return yield* client.getSettings().pipe(Effect.mapError(proposalError));
@@ -222,6 +382,7 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(MemoryProposalPoller, make).pipe(
+  Layer.provide(MemoryNoticeService.layer),
   Layer.provide(Scheduler.layer),
   Layer.provide(memoryClientLayer),
   Layer.provide(FetchHttpClient.layer),

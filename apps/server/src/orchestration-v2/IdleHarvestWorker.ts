@@ -7,6 +7,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+import { resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -22,6 +23,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 const IDLE_MS = 3_600_000;
 const MIN_USER_MESSAGES = 3;
 const SWEEP_MS = Duration.toMillis(Duration.minutes(5));
+const TIMELINE_PAGE_LIMIT = 200;
 const HARVEST_TEXT = "Harvest this thread";
 
 type Verdict =
@@ -105,6 +107,65 @@ const makeSweep = Effect.gen(function* () {
     });
   });
 
+  const scanDelta = Effect.fn("IdleHarvestWorker.scanDelta")(function* (
+    thread: OrchestrationV2ThreadShell,
+  ) {
+    let cursor =
+      thread.harvest != null && thread.harvest.position >= 0 ? thread.harvest.position : -1;
+    let tail: { readonly position: number; readonly itemId: string } | null = null;
+    let proposed = false;
+
+    while (true) {
+      const page = yield* projections.getTimelinePage(thread.id, {
+        afterPosition: cursor,
+        view: "activity",
+        limit: TIMELINE_PAGE_LIMIT,
+      });
+      const last = page.items.at(-1);
+      if (last === undefined) break;
+
+      for (const projected of page.items) {
+        const item = projected.item;
+        if (
+          item.type === "dynamic_tool" &&
+          resolveT3McpToolId(item.toolName) === "memory_propose"
+        ) {
+          proposed = true;
+        }
+      }
+
+      cursor = last.position;
+      tail = { position: last.position, itemId: last.sourceItemId };
+      if (!page.hasMore) break;
+    }
+
+    return proposed ? tail : null;
+  });
+
+  const checkpointProposedSpan = Effect.fn("IdleHarvestWorker.checkpointProposedSpan")(function* (
+    thread: OrchestrationV2ThreadShell,
+    latestRunId: string,
+    tail: { readonly position: number; readonly itemId: string },
+  ) {
+    const now = yield* DateTime.now;
+
+    yield* orchestrator.setHarvestCheckpoint({
+      commandId: CommandId.make(`server:harvest-skip:${thread.id}:${latestRunId}`),
+      threadId: thread.id,
+      harvest: {
+        at: now,
+        position: tail.position,
+        itemId: tail.itemId,
+        runId: thread.latestRunId,
+        pendingRunId: null,
+      },
+    });
+    yield* Effect.logInfo("orchestration-v2.idle-harvest", {
+      event: "idle-harvest",
+      skipped: "proposed-inline",
+    });
+  });
+
   const harvestIfEnoughMessages = Effect.fn("IdleHarvestWorker.harvestIfEnoughMessages")(function* (
     threadId: ThreadId,
   ) {
@@ -141,6 +202,12 @@ const makeSweep = Effect.gen(function* () {
     );
     if (userMessages.length < MIN_USER_MESSAGES) {
       if (authoredMs !== null) belowMinimum.set(thread.id, authoredMs);
+      return;
+    }
+
+    const proposedTail = yield* scanDelta(thread);
+    if (proposedTail !== null) {
+      yield* checkpointProposedSpan(thread, latestRunId, proposedTail);
       return;
     }
 

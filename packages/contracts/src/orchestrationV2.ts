@@ -1293,6 +1293,9 @@ export type OrchestrationV2IdleCompaction = typeof OrchestrationV2IdleCompaction
 export const OrchestrationV2HarvestTrigger = Schema.Literals(["idle", "manual"]);
 export type OrchestrationV2HarvestTrigger = typeof OrchestrationV2HarvestTrigger.Type;
 
+export const OrchestrationV2MemoryNotice = Schema.Literals(["tray-empty"]);
+export type OrchestrationV2MemoryNotice = typeof OrchestrationV2MemoryNotice.Type;
+
 export const OrchestrationV2ConversationMessage = Schema.Struct({
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
@@ -1300,6 +1303,7 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   senderThreadId: Schema.optional(ThreadId),
   idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
   harvest: Schema.optional(OrchestrationV2HarvestTrigger),
+  memoryNotice: Schema.optional(OrchestrationV2MemoryNotice),
   /**
    * The message is the script a provider-native workflow run executes, not prose. Clients show
    * the workflow's opening instead and keep the script behind a disclosure.
@@ -1609,6 +1613,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     harvest: Schema.optional(OrchestrationV2HarvestTrigger),
+    memoryNotice: Schema.optional(OrchestrationV2MemoryNotice),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
@@ -2451,6 +2456,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     harvest: Schema.optional(OrchestrationV2HarvestTrigger),
+    memoryNotice: Schema.optional(OrchestrationV2MemoryNotice),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
@@ -3164,6 +3170,7 @@ export const OrchestrationV2Command = Schema.Union([
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     harvest: Schema.optional(OrchestrationV2HarvestTrigger),
+    memoryNotice: Schema.optional(OrchestrationV2MemoryNotice),
     commandId: CommandId,
     threadId: ThreadId,
     messageId: MessageId,

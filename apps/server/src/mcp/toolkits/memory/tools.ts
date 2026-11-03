@@ -9,7 +9,15 @@ import * as ThreadManagementService from "../../../orchestration-v2/ThreadManage
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
-import { MemoryClient, MemoryKind, MemoryRecallResult, MemorySource } from "./client.ts";
+import {
+  MemoryAudience,
+  MemoryClient,
+  MemoryDefectStatus,
+  MemoryKind,
+  MemoryRecallResult,
+  MemorySource,
+  MemoryTakenBy,
+} from "./client.ts";
 
 const shared = {
   failure: OrchestratorMcpFailure,
@@ -44,13 +52,20 @@ const MemoryHarvestBeginTool = Tool.make("memory_harvest_begin", {
 const MemoryProposeTool = Tool.make("memory_propose", {
   ...shared,
   description:
-    "Queue a memory for the user to approve. Nothing is saved until they do. `kind`: decision (needs `rejected`) or fact. `headline` names the topic in under 100 characters. Gotchas and decisions only, never status or session narrative. `flags` and `neighbours` show what the checks found and which saved records are close.",
+    "Queue a memory for the user to approve. Nothing is saved until they do. `kind`: fact, decision (needs `rejected`) or defect (needs `where`, `trigger`, `left_because`; `claim` is the symptom). `headline` is the claim in one sentence. No ticket ids, dates or file:line in `claim`. `closes` turns the proposal into a close tile for that defect. `flags` and `neighbours` show what the checks found and which saved records are close.",
   parameters: Schema.Struct({
     kind: MemoryKind,
     headline: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
     claim: TrimmedNonEmptyString.check(Schema.isMaxLength(2000)),
-    why: TrimmedNonEmptyString.check(Schema.isMaxLength(2000)),
     rejected: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(2000))),
+    where: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
+    trigger: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(1000))),
+    left_because: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(1000))),
+    fix_hint: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(1000))),
+    impact: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(1000))),
+    audience: Schema.optional(MemoryAudience),
+    stage: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(40))),
+    closes: Schema.optional(TrimmedNonEmptyString),
     origin: Schema.optional(Schema.Literals(["agent", "harvest"])),
   }),
   success: Schema.Struct({
@@ -77,11 +92,12 @@ const MemoryProposeTool = Tool.make("memory_propose", {
 const MemoryRecallTool = Tool.make("memory_recall", {
   ...shared,
   description:
-    "Search saved memory: approved records and the legacy archive. Defaults to this project's scope; `scope` searches another, `kind` filters. Each result names its `source` (v2 or legacy).",
+    "Search saved memory: approved records and the legacy archive. Defaults to this project's scope; `scope` searches another, `kind` filters, `audience` keeps records written for that role or for everyone. Each result names its `source` (v2 or legacy).",
   parameters: Schema.Struct({
     query: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
     scope: Schema.optional(TrimmedNonEmptyString),
     kind: Schema.optional(MemoryKind),
+    audience: Schema.optional(MemoryAudience),
     limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 20 }))),
   }),
   success: Schema.Struct({ results: Schema.Array(MemoryRecallResult) }),
@@ -104,9 +120,43 @@ const MemoryGetTool = Tool.make("memory_get", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, true);
 
+const DefectState = Schema.Struct({
+  recordId: Schema.String,
+  defectStatus: MemoryDefectStatus,
+  takenBy: Schema.NullOr(MemoryTakenBy),
+});
+
+const MemoryTakeTool = Tool.make("memory_take", {
+  ...shared,
+  description:
+    "Mark an open defect as taken by this thread because you are folding its fix into current work. Returns the defect's status. A take left for 14 days reverts to open.",
+  parameters: Schema.Struct({ recordId: TrimmedNonEmptyString }),
+  success: DefectState,
+})
+  .annotate(Tool.Title, "Take a defect")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, true);
+
+const MemoryReleaseTool = Tool.make("memory_release", {
+  ...shared,
+  description:
+    "Return a taken defect to open when the work that took it will not fix it. Returns the defect's status.",
+  parameters: Schema.Struct({ recordId: TrimmedNonEmptyString }),
+  success: DefectState,
+})
+  .annotate(Tool.Title, "Release a defect")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, true);
+
 export const MemoryToolkit = Toolkit.make(
   MemoryHarvestBeginTool,
   MemoryProposeTool,
   MemoryRecallTool,
   MemoryGetTool,
+  MemoryTakeTool,
+  MemoryReleaseTool,
 );

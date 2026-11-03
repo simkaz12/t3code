@@ -57,10 +57,19 @@ const messagesFor = (count: number) =>
     updatedAt: at(70 * MINUTE_MS - index),
   }));
 
+const timelineItem = (position: number, type: string, toolName: string | null = null) => ({
+  position,
+  sourceThreadId: ThreadId.make("thread:source"),
+  sourceItemId: `item:${position}`,
+  visibility: "local",
+  item: { type, toolName },
+});
+
 type Shells = Ref.Ref<ReadonlyArray<OrchestrationV2ThreadShell>>;
 
 interface HarnessOptions {
   readonly messageCounts?: Readonly<Record<string, number>>;
+  readonly timelines?: Readonly<Record<string, ReadonlyArray<ReturnType<typeof timelineItem>>>>;
   readonly memoryServerUrl?: string;
   readonly afterSnapshot?: (shells: Shells) => Effect.Effect<void>;
   readonly afterDispatch?: (shells: Shells) => Effect.Effect<void>;
@@ -95,6 +104,11 @@ const makeHarness = (
       readonly threadId: ThreadId;
       readonly harvest: unknown;
     }>();
+    const checkpointed = yield* Queue.unbounded<{
+      readonly threadId: ThreadId;
+      readonly harvest: unknown;
+    }>();
+    const timelineReads = yield* Queue.unbounded<unknown>();
     const sweeps = yield* Queue.unbounded<void>();
     const layer = IdleHarvestWorker.layer.pipe(
       Layer.provide(
@@ -110,6 +124,16 @@ const makeHarness = (
             getThreadShell: (threadId) =>
               Ref.get(shells).pipe(
                 Effect.map((current) => current.find((thread) => thread.id === threadId) ?? null),
+              ),
+            getTimelinePage: (threadId, pageOptions) =>
+              Queue.offer(timelineReads, pageOptions).pipe(
+                Effect.as({
+                  items: (options.timelines?.[threadId] ?? []).filter(
+                    (projected) => projected.position > (pageOptions.afterPosition ?? -1),
+                  ),
+                  totalItems: 0,
+                  hasMore: false,
+                } as never),
               ),
             getThreadRecords: (threadId) =>
               Effect.succeed({
@@ -145,6 +169,15 @@ const makeHarness = (
                     },
                   ],
                 } as never),
+              ),
+            setHarvestCheckpoint: (input) =>
+              updateShell(shells, input.threadId, {
+                harvest: input.harvest as OrchestrationV2ThreadShell["harvest"],
+              }).pipe(
+                Effect.andThen(
+                  Queue.offer(checkpointed, { threadId: input.threadId, harvest: input.harvest }),
+                ),
+                Effect.asVoid,
               ),
             setHarvestPendingRun: (input) =>
               Ref.get(shells).pipe(
@@ -184,7 +217,17 @@ const makeHarness = (
         ),
       ),
     );
-    return { shells, memoryServerUrl, dispatched, stamped, sweeps, settingsReads, layer };
+    return {
+      shells,
+      memoryServerUrl,
+      dispatched,
+      stamped,
+      checkpointed,
+      timelineReads,
+      sweeps,
+      settingsReads,
+      layer,
+    };
   });
 
 it.effect("dispatches one harvest for an hour-idle thread and records the pending run", () =>
@@ -361,6 +404,100 @@ it.effect("keeps a checkpoint stamped between the dispatch and the pending write
         runId: "run:begun",
         pendingRunId: "run:harvest:thread:a",
       });
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+const proposedSkipCase = (toolName: string) =>
+  Effect.gen(function* () {
+    const harness = yield* makeHarness(
+      [
+        shellOf("proposed", {
+          harvest: {
+            at: at(120 * MINUTE_MS),
+            position: 4,
+            itemId: "item:4",
+            runId: RunId.make("run:earlier"),
+            pendingRunId: null,
+          },
+        }),
+        shellOf("control"),
+      ],
+      {
+        timelines: {
+          "thread:proposed": [
+            timelineItem(3, "dynamic_tool", "memory_propose"),
+            timelineItem(5, "assistant_message"),
+            timelineItem(6, "dynamic_tool", toolName),
+            timelineItem(7, "assistant_message"),
+          ],
+        },
+      },
+    );
+    yield* Effect.gen(function* () {
+      assert.equal((yield* Queue.take(harness.dispatched)).threadId, "thread:control");
+
+      const checkpoint = yield* Queue.take(harness.checkpointed);
+      assert.equal(checkpoint.threadId, "thread:proposed");
+      assert.deepInclude(checkpoint.harvest as object, {
+        position: 7,
+        itemId: "item:7",
+        runId: "run:proposed",
+        pendingRunId: null,
+      });
+      assert.equal(yield* Queue.size(harness.dispatched), 0);
+      assert.equal(yield* Queue.size(harness.checkpointed), 0);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+it.effect("skips the harvest and advances the checkpoint after a Claude-form memory_propose", () =>
+  proposedSkipCase("mcp__t3-code__memory_propose"),
+);
+
+it.effect("skips the harvest and advances the checkpoint after a bare memory_propose", () =>
+  proposedSkipCase("memory_propose"),
+);
+
+it.effect("skips the harvest after a server-dot-tool memory_propose", () =>
+  proposedSkipCase("t3-code.memory_propose"),
+);
+
+it.effect("reads the timeline after the checkpoint position in the activity view", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeHarness([
+      shellOf("a", {
+        harvest: {
+          at: at(120 * MINUTE_MS),
+          position: 9,
+          itemId: "item:9",
+          runId: RunId.make("run:earlier"),
+          pendingRunId: null,
+        },
+      }),
+    ]);
+    yield* Effect.gen(function* () {
+      yield* Queue.take(harness.dispatched);
+      const read = yield* Queue.take(harness.timelineReads);
+      assert.deepEqual(read, { afterPosition: 9, view: "activity", limit: 200 });
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+it.effect("dispatches when the span holds other tool calls but no memory_propose", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeHarness([shellOf("a")], {
+      timelines: {
+        "thread:a": [
+          timelineItem(0, "dynamic_tool", "mcp__t3-code__memory_recall"),
+          timelineItem(1, "dynamic_tool", "memory_propose_notes"),
+          timelineItem(2, "dynamic_tool", null),
+          timelineItem(3, "assistant_message"),
+        ],
+      },
+    });
+    yield* Effect.gen(function* () {
+      assert.equal((yield* Queue.take(harness.dispatched)).threadId, "thread:a");
+      assert.equal(yield* Queue.size(harness.checkpointed), 0);
     }).pipe(Effect.provide(harness.layer));
   }),
 );

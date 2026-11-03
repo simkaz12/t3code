@@ -19,6 +19,7 @@ import {
   newTileIds,
   orderedTiles,
   pendingCount,
+  rejectReason,
   runTileAction,
   suggestionFor,
   targetSummary,
@@ -26,11 +27,14 @@ import {
   tileGlyph,
   tileKey,
   tileProjectStyle,
+  traySections,
   type TrayCursorAction,
   trayCursorReducer,
   type TrayCursorState,
   type TrayTile,
+  visibleTiles,
   wordDiff,
+  closeLine,
 } from "./memoryTray.logic";
 
 const environmentId = EnvironmentId.make("environment-1");
@@ -42,11 +46,22 @@ const tile = (id: string, overrides: Partial<TrayTile> = {}): TrayTile => ({
   origin: "agent",
   headline: `Headline ${id}`,
   claim: "claim",
-  why: "why",
+  why: null,
   rejected: null,
   scope: "oktra",
   topic: "oktra-be test harness",
   purpose: "pitfall",
+  audience: null,
+  reader: null,
+  section: "real",
+  stage: "",
+  where: null,
+  trigger: null,
+  leftBecause: null,
+  fixHint: null,
+  impact: null,
+  defectStatus: null,
+  takenBy: null,
   threadId: "thread-1",
   threadTitle: "Thread one",
   projectId: "project-1",
@@ -84,6 +99,35 @@ describe("groupTiles", () => {
     ]);
   });
 
+  it("lists real tiles before weak ones and groups each section on its own", () => {
+    const groups = groupTiles([
+      tile("weak-flagged", { section: "weak", flags: ["demote: reader none"] }),
+      tile("real-plain"),
+      tile("weak-plain", { section: "weak" }),
+      tile("real-other", { threadId: "thread-2", threadTitle: "Thread two" }),
+    ]);
+
+    expect(
+      groups.map((group) => ({
+        section: group.section,
+        ids: group.tiles.map((entry) => entry.id),
+      })),
+    ).toEqual([
+      { section: "real", ids: ["real-plain"] },
+      { section: "real", ids: ["real-other"] },
+      { section: "weak", ids: ["weak-flagged", "weak-plain"] },
+    ]);
+  });
+
+  it("splits the tray into the two sections and hides weak tiles while collapsed", () => {
+    const tiles = [tile("weak", { section: "weak" }), tile("real")];
+
+    expect(traySections(tiles).real.map((entry) => entry.id)).toEqual(["real"]);
+    expect(traySections(tiles).weak.map((entry) => entry.id)).toEqual(["weak"]);
+    expect(visibleTiles(tiles, false).map((entry) => entry.id)).toEqual(["real"]);
+    expect(visibleTiles(tiles, true).map((entry) => entry.id)).toEqual(["real", "weak"]);
+  });
+
   it("keeps threads of different environments apart", () => {
     const groups = groupTiles([
       tile("a"),
@@ -95,8 +139,9 @@ describe("groupTiles", () => {
 });
 
 describe("badge and notifications", () => {
-  it("counts pending tiles", () => {
+  it("counts pending tiles in the real section only", () => {
     expect(pendingCount([tile("a"), tile("b")])).toBe(2);
+    expect(pendingCount([tile("a"), tile("b", { section: "weak" })])).toBe(1);
     expect(pendingCount([])).toBe(0);
   });
 
@@ -154,7 +199,11 @@ describe("tile actions", () => {
 
   it("sends only the edited fields and the superseded record with its reason", () => {
     const source = tile("a");
-    const edits = { ...editsFromTile(source), headline: "  Better headline ", why: "new why" };
+    const edits = {
+      ...editsFromTile(source),
+      headline: "  Better headline ",
+      rejected: "the other option",
+    };
 
     expect(
       approveInput(source, {
@@ -163,10 +212,63 @@ describe("tile actions", () => {
       }),
     ).toEqual({
       proposalId: "a",
-      edits: { headline: "Better headline", fields: { why: "new why" } },
+      edits: { headline: "Better headline", fields: { rejected: "the other option" } },
       supersedes: ["record-1"],
       reason: "correction",
     });
+  });
+
+  it("sends an audience edit only when it names a role and differs from the tile", () => {
+    const source = tile("a", { audience: "builder" });
+
+    expect(
+      approveInput(source, { edits: { ...editsFromTile(source), audience: "reviewer" } }),
+    ).toEqual({ proposalId: "a", edits: { audience: "reviewer" } });
+    expect(approveInput(source, { edits: { ...editsFromTile(source) } })).toEqual({
+      proposalId: "a",
+    });
+  });
+
+  it("sends an explicit null audience when the owner clears one the tile already had", () => {
+    const source = tile("a", { audience: "builder" });
+
+    expect(approveInput(source, { edits: { ...editsFromTile(source), audience: "" } })).toEqual({
+      proposalId: "a",
+      edits: { audience: null },
+    });
+  });
+
+  it("sends no audience edit when the audience is unchanged or was never set", () => {
+    const set = tile("a", { audience: "builder" });
+    const unset = tile("b", { audience: null });
+
+    expect(approveInput(set, { edits: { ...editsFromTile(set), audience: "builder" } })).toEqual({
+      proposalId: "a",
+    });
+    expect(approveInput(unset, { edits: { ...editsFromTile(unset), audience: "" } })).toEqual({
+      proposalId: "b",
+    });
+  });
+
+  it("sends edited defect fields under fields", () => {
+    const source = tile("d", { kind: "defect", where: "src/form.ts", trigger: "empty field" });
+
+    expect(
+      approveInput(source, {
+        edits: { ...editsFromTile(source), where: " src/form.tsx ", impact: "blocks submit" },
+      }),
+    ).toEqual({
+      proposalId: "d",
+      edits: { fields: { where: "src/form.tsx", impact: "blocks submit" } },
+    });
+  });
+});
+
+describe("rejectReason", () => {
+  it("trims the reason and refuses an empty or blank one", () => {
+    expect(rejectReason("  derivable from the tree ")).toBe("derivable from the tree");
+    expect(rejectReason("")).toBeNull();
+    expect(rejectReason("   \n")).toBeNull();
   });
 });
 
@@ -241,7 +343,7 @@ describe("expandTile", () => {
 
 describe("targeted tiles", () => {
   const targeted = (
-    action: "retire" | "supersede" | "merge" | "promote",
+    action: "retire" | "supersede" | "merge" | "promote" | "close",
     overrides: Partial<NonNullable<MemoryProposalTile["target"]>> = {},
   ) =>
     tile("t", {
@@ -469,6 +571,7 @@ describe("tile presentation", () => {
     expect(tileGlyph(tile("a", { target: target("merge") }))).toBe("↻");
     expect(tileGlyph(tile("a", { target: target("supersede") }))).toBe("↻");
     expect(tileGlyph(tile("a", { target: target("promote") }))).toBe("·");
+    expect(tileGlyph(tile("a", { kind: "defect" }))).toBe("!");
   });
 
   it("derives the project chip from the icon override or the project title", () => {
@@ -494,7 +597,6 @@ describe("tile presentation", () => {
   it("lists only the detail fields that have a value", () => {
     const fields = detailFields(
       tile("a", {
-        why: "",
         branch: "main",
         flags: ["kind differs", "loose headline"],
         neighbours: [
@@ -507,6 +609,8 @@ describe("tile presentation", () => {
     expect(fields.map((field) => field.label)).toEqual([
       "Headline",
       "Claim",
+      "Audience",
+      "Section",
       "Thread",
       "Branch",
       "Origin",
@@ -523,6 +627,78 @@ describe("tile presentation", () => {
     expect(fields.find((field) => field.label === "Neighbours")?.lines).toEqual([
       "Near one · 0.93 · restates",
       "Near two · 0.50",
+    ]);
+  });
+
+  it("shows audience, reader and stage, and the legacy why read-only", () => {
+    const fields = detailFields(
+      tile("a", { audience: "navigator", reader: "trap", stage: "recon", why: "an old reason" }),
+    );
+
+    expect(fields.find((field) => field.label === "Audience")).toMatchObject({
+      lines: ["navigator"],
+      editable: "audience",
+    });
+    expect(fields.find((field) => field.label === "Reader")?.lines).toEqual(["trap"]);
+    expect(fields.find((field) => field.label === "Stage")?.lines).toEqual(["recon"]);
+    expect(fields.find((field) => field.label === "Why (legacy)")?.lines).toEqual([
+      "an old reason",
+    ]);
+    expect(fields.find((field) => field.label === "Why (legacy)")).not.toHaveProperty("editable");
+  });
+
+  it("shows a defect's location, trigger, reason it was left and who took it", () => {
+    const fields = detailFields(
+      tile("d", {
+        kind: "defect",
+        claim: "Submit does nothing",
+        where: "src/form.ts",
+        trigger: "empty field",
+        leftBecause: "out of scope",
+        fixHint: "validate first",
+        impact: "blocks submit",
+        defectStatus: "taken",
+        takenBy: {
+          threadId: "thread-2",
+          link: "t3-thread://v2/environment-1/thread-2",
+          at: "2026-11-02T09:00:00.000Z",
+        },
+      }),
+    );
+    const linesOf = (label: string) => fields.find((field) => field.label === label)?.lines;
+
+    expect(linesOf("Where")).toEqual(["src/form.ts"]);
+    expect(linesOf("Trigger")).toEqual(["empty field"]);
+    expect(linesOf("Left because")).toEqual(["out of scope"]);
+    expect(linesOf("Fix hint")).toEqual(["validate first"]);
+    expect(linesOf("Impact")).toEqual(["blocks submit"]);
+    expect(linesOf("Status")).toEqual(["taken"]);
+    expect(linesOf("Taken by")).toEqual([
+      "Thread thread-2 at 2026-11-02T09:00:00.000Z",
+      "t3-thread://v2/environment-1/thread-2",
+    ]);
+  });
+
+  it("describes a close tile's target and names the record it closes", () => {
+    const closing = tile("c", {
+      kind: "defect",
+      target: {
+        recordId: "record-9",
+        source: "v2",
+        action: "close",
+        recordHeadline: "Submit does nothing",
+        replacementHeadline: null,
+        reason: "open 90d",
+      },
+    });
+
+    expect(approveLabel(closing)).toBe("Close");
+    expect(closeLine(closing)).toBe("Submit does nothing");
+    expect(closeLine(tile("a"))).toBeNull();
+    expect(detailFields(closing).find((field) => field.label === "Target")?.lines).toEqual([
+      "Closes: Submit does nothing",
+      "Approving marks this defect closed. The excerpt is the proof.",
+      "Reason: open 90d",
     ]);
   });
 
@@ -598,9 +774,8 @@ describe("approveAction and flashText", () => {
     expect(flashText([{ type: "approve" }, { type: "approve" }, superseding])).toBe(
       "Approved 2, Superseded 1",
     );
-    expect(flashText([{ type: "reject" }, { type: "reject" }, { type: "reject" }])).toBe(
-      "Rejected 3",
-    );
+    const rejecting = { type: "reject", reason: "derivable" } as const;
+    expect(flashText([rejecting, rejecting, rejecting])).toBe("Rejected 3");
     expect(flashText([{ type: "reinforce", recordId: "r" }])).toBe("Reinforced");
     expect(flashText([saved])).toBe("Saved");
     expect(flashText([])).toBe("");

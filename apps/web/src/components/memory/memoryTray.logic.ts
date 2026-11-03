@@ -3,6 +3,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   type EnvironmentId,
   type MemoryApproveInput,
+  type MemoryAudience,
   type MemoryProposalNeighbour,
   type MemoryProposalTile,
   type MemoryReinforceInput,
@@ -21,7 +22,17 @@ export interface TrayTile extends MemoryProposalTile {
   readonly environmentId: EnvironmentId;
 }
 
+export type TraySection = MemoryProposalTile["section"];
+
+export const TRAY_AUDIENCES: ReadonlyArray<MemoryAudience> = [
+  "decider",
+  "builder",
+  "reviewer",
+  "navigator",
+];
+
 export interface TileGroup {
+  readonly section: TraySection;
   readonly threadId: string;
   readonly threadTitle: string;
   readonly tiles: ReadonlyArray<TrayTile>;
@@ -36,11 +47,16 @@ export interface TileSuggestion {
 export interface TileEdits {
   readonly headline: string;
   readonly claim: string;
-  readonly why: string;
   readonly rejected: string;
   readonly scope: string;
   readonly purpose: string;
   readonly topic: string;
+  readonly audience: string;
+  readonly where: string;
+  readonly trigger: string;
+  readonly leftBecause: string;
+  readonly fixHint: string;
+  readonly impact: string;
 }
 
 const isLowConfidence = (tile: Pick<MemoryProposalTile, "confidence">) =>
@@ -64,19 +80,42 @@ function compareTiles(a: MemoryProposalTile, b: MemoryProposalTile): number {
   return b.createdAt.localeCompare(a.createdAt);
 }
 
+const sectionRank = (tile: Pick<MemoryProposalTile, "section">) =>
+  tile.section === "weak" ? 1 : 0;
+
 export function groupTiles(tiles: ReadonlyArray<TrayTile>): ReadonlyArray<TileGroup> {
-  const byThread = new Map<string, { threadTitle: string; tiles: Array<TrayTile> }>();
-  for (const tile of tiles.toSorted(compareTiles)) {
-    const key = `${tile.environmentId}:${tile.threadId}`;
+  const byThread = new Map<
+    string,
+    { section: TraySection; threadId: string; threadTitle: string; tiles: Array<TrayTile> }
+  >();
+  const ordered = tiles.toSorted((a, b) => sectionRank(a) - sectionRank(b) || compareTiles(a, b));
+  for (const tile of ordered) {
+    const threadId = `${tile.environmentId}:${tile.threadId}`;
+    const key = `${tile.section}|${threadId}`;
     const group = byThread.get(key);
-    if (group === undefined) byThread.set(key, { threadTitle: tile.threadTitle, tiles: [tile] });
-    else group.tiles.push(tile);
+    if (group === undefined) {
+      byThread.set(key, {
+        section: tile.section,
+        threadId,
+        threadTitle: tile.threadTitle,
+        tiles: [tile],
+      });
+    } else {
+      group.tiles.push(tile);
+    }
   }
 
-  return Array.from(byThread, ([key, group]) => ({ threadId: key, ...group }));
+  return Array.from(byThread.values());
 }
 
-export const pendingCount = (tiles: ReadonlyArray<unknown>) => tiles.length;
+export const pendingCount = (tiles: ReadonlyArray<Pick<MemoryProposalTile, "section">>) =>
+  tiles.filter((tile) => tile.section === "real").length;
+
+export function rejectReason(draft: string): string | null {
+  const reason = draft.trim();
+
+  return reason === "" ? null : reason;
+}
 
 export function newTileIds(
   seen: ReadonlySet<string> | null,
@@ -102,6 +141,7 @@ const TARGET_LABELS = {
   supersede: "Supersede",
   merge: "Merge",
   promote: "Promote",
+  close: "Close",
 } as const;
 
 export const approveLabel = (tile: Pick<MemoryProposalTile, "target">) =>
@@ -129,6 +169,7 @@ const RECORD_LINE_LABELS = {
   supersede: "Supersedes",
   merge: "Retires",
   promote: "Promotes",
+  close: "Closes",
 } as const;
 
 function targetLine(
@@ -158,6 +199,8 @@ function targetSentence(action: keyof typeof TARGET_LABELS, hasKeeper: boolean):
         : "Approving marks this record superseded by a new record.";
     case "promote":
       return "Approving promotes this legacy record into the current store.";
+    case "close":
+      return "Approving marks this defect closed. The excerpt is the proof.";
   }
 }
 
@@ -181,17 +224,40 @@ export function targetSummary(tile: Pick<MemoryProposalTile, "target">): TileTar
 
 export const canExpand = (tile: Pick<MemoryProposalTile, "projectId">) => tile.projectId !== "";
 
+export function closeLine(tile: Pick<MemoryProposalTile, "target">): string | null {
+  if (tile.target?.action !== "close") return null;
+
+  const record = targetSummary(tile)?.record;
+
+  return record === undefined || record === null ? null : record.text;
+}
+
 export function editsFromTile(tile: MemoryProposalTile): TileEdits {
   return {
     headline: tile.headline,
     claim: tile.claim,
-    why: tile.why,
     rejected: tile.rejected ?? "",
     scope: tile.scope,
     purpose: tile.purpose ?? "",
     topic: tile.topic ?? "",
+    audience: tile.audience ?? "",
+    where: tile.where ?? "",
+    trigger: tile.trigger ?? "",
+    leftBecause: tile.leftBecause ?? "",
+    fixHint: tile.fixHint ?? "",
+    impact: tile.impact ?? "",
   };
 }
+
+const isAudience = (value: string): value is MemoryAudience =>
+  TRAY_AUDIENCES.some((audience) => audience === value);
+
+const audienceEdit = (changed: boolean, audience: string) => {
+  if (!changed) return {};
+  if (audience === "") return { audience: null };
+
+  return isAudience(audience) ? { audience } : {};
+};
 
 export function approveInput(
   tile: MemoryProposalTile,
@@ -206,15 +272,21 @@ export function approveInput(
     edits !== undefined && edits[field].trim() !== original[field];
   const fields = {
     ...(changed("claim") ? { claim: edits!.claim.trim() } : {}),
-    ...(changed("why") ? { why: edits!.why.trim() } : {}),
     ...(changed("rejected") ? { rejected: edits!.rejected.trim() } : {}),
+    ...(changed("where") ? { where: edits!.where.trim() } : {}),
+    ...(changed("trigger") ? { trigger: edits!.trigger.trim() } : {}),
+    ...(changed("leftBecause") ? { leftBecause: edits!.leftBecause.trim() } : {}),
+    ...(changed("fixHint") ? { fixHint: edits!.fixHint.trim() } : {}),
+    ...(changed("impact") ? { impact: edits!.impact.trim() } : {}),
   };
+  const audience = edits?.audience.trim() ?? "";
   const editBody = {
     ...(changed("headline") ? { headline: edits!.headline.trim() } : {}),
     ...(Object.keys(fields).length > 0 ? { fields } : {}),
     ...(changed("scope") ? { scope: edits!.scope.trim() } : {}),
     ...(changed("purpose") ? { purpose: edits!.purpose.trim() } : {}),
     ...(changed("topic") ? { topic: edits!.topic.trim() } : {}),
+    ...audienceEdit(changed("audience"), audience),
   };
 
   return {
@@ -233,11 +305,17 @@ function expandSeed(tile: MemoryProposalTile): string {
     origin: tile.origin,
     headline: tile.headline,
     claim: tile.claim,
-    why: tile.why,
     rejected: tile.rejected,
     scope: tile.scope,
     topic: tile.topic,
     purpose: tile.purpose,
+    audience: tile.audience,
+    reader: tile.reader,
+    section: tile.section,
+    stage: tile.stage,
+    where: tile.where,
+    trigger: tile.trigger,
+    leftBecause: tile.leftBecause,
     target: tile.target,
   };
 
@@ -281,7 +359,7 @@ export type TileAction =
       readonly reason: MemorySupersedeReason;
       readonly edits?: TileEdits;
     }
-  | { readonly type: "reject"; readonly reason?: string }
+  | { readonly type: "reject"; readonly reason: string }
   | { readonly type: "reinforce"; readonly recordId: string };
 
 export interface TileCommands<Result> {
@@ -322,10 +400,7 @@ export function runTileAction<Result>(
     case "reject":
       return commands.reject({
         environmentId,
-        input: {
-          proposalId: tile.id,
-          ...(action.reason === undefined ? {} : { reason: action.reason }),
-        },
+        input: { proposalId: tile.id, reason: action.reason },
       });
     case "reinforce":
       return commands.reinforce({
@@ -341,10 +416,35 @@ export const tileKey = (tile: Pick<TrayTile, "environmentId" | "id">) =>
 export const orderedTiles = (tiles: ReadonlyArray<TrayTile>): ReadonlyArray<TrayTile> =>
   groupTiles(tiles).flatMap((group) => group.tiles);
 
+export interface TraySections {
+  readonly real: ReadonlyArray<TrayTile>;
+  readonly weak: ReadonlyArray<TrayTile>;
+}
+
+export function traySections(tiles: ReadonlyArray<TrayTile>): TraySections {
+  const ordered = orderedTiles(tiles);
+
+  return {
+    real: ordered.filter((tile) => tile.section === "real"),
+    weak: ordered.filter((tile) => tile.section === "weak"),
+  };
+}
+
+export function visibleTiles(
+  tiles: ReadonlyArray<TrayTile>,
+  weakOpen: boolean,
+): ReadonlyArray<TrayTile> {
+  const { real, weak } = traySections(tiles);
+
+  return weakOpen ? [...real, ...weak] : real;
+}
+
 export function tileGlyph(tile: Pick<MemoryProposalTile, "kind" | "suggestion" | "target">) {
   if (tile.suggestion?.action === "reinforce") return "≡";
   if (tile.suggestion?.action === "supersede") return "↻";
   if (tile.target !== null && tile.target.action !== "promote") return "↻";
+
+  if (tile.kind === "defect") return "!";
 
   return tile.kind === "decision" ? "◆" : "·";
 }
@@ -641,6 +741,7 @@ export function flashText(actions: ReadonlyArray<TileAction>): string {
 export interface DetailField {
   readonly label: string;
   readonly lines: ReadonlyArray<string>;
+  readonly editable?: "audience";
 }
 
 function targetLines(tile: Pick<MemoryProposalTile, "target">): ReadonlyArray<string> {
@@ -655,12 +756,30 @@ function targetLines(tile: Pick<MemoryProposalTile, "target">): ReadonlyArray<st
   ].filter((line) => line !== null);
 }
 
+function takenByLines(tile: Pick<MemoryProposalTile, "takenBy">): ReadonlyArray<string> {
+  const { takenBy } = tile;
+  if (takenBy === null) return [];
+
+  return [`Thread ${takenBy.threadId} at ${takenBy.at}`, takenBy.link];
+}
+
 export function detailFields(tile: MemoryProposalTile): ReadonlyArray<DetailField> {
   const fields: ReadonlyArray<DetailField> = [
     { label: "Headline", lines: [tile.headline] },
     { label: "Claim", lines: [tile.claim] },
-    { label: "Why", lines: [tile.why] },
+    { label: "Where", lines: [tile.where ?? ""] },
+    { label: "Trigger", lines: [tile.trigger ?? ""] },
+    { label: "Left because", lines: [tile.leftBecause ?? ""] },
+    { label: "Fix hint", lines: [tile.fixHint ?? ""] },
+    { label: "Impact", lines: [tile.impact ?? ""] },
+    { label: "Status", lines: [tile.kind === "defect" ? (tile.defectStatus ?? "") : ""] },
+    { label: "Taken by", lines: takenByLines(tile) },
     { label: "Rejected", lines: [tile.rejected ?? ""] },
+    { label: "Audience", lines: [tile.audience ?? "none"], editable: "audience" },
+    { label: "Reader", lines: [tile.reader ?? ""] },
+    { label: "Stage", lines: [tile.stage] },
+    { label: "Section", lines: [tile.section] },
+    { label: "Why (legacy)", lines: [tile.why ?? ""] },
     { label: "Thread", lines: [tile.threadTitle] },
     { label: "Branch", lines: [tile.branch ?? ""] },
     { label: "Origin", lines: [tile.origin] },

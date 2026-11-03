@@ -465,6 +465,12 @@ export function summarizeT3ToolCalls(
     case "memory-get":
       label = phrase("Read", "read", quantity(selected.length, "memory", "memories"));
       break;
+    case "memory-take":
+      label = phrase("Took", "take", quantity(selected.length, "defect"));
+      break;
+    case "memory-release":
+      label = phrase("Released", "release", quantity(selected.length, "defect"));
+      break;
   }
   return { label, failedCount };
 }

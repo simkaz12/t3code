@@ -1,4 +1,4 @@
-import type { KeyboardEvent, RefObject } from "react";
+import { useState, type KeyboardEvent, type RefObject } from "react";
 
 import { Button } from "../ui/button";
 import { Dialog, DialogFooter, DialogPanel, DialogPopup } from "../ui/dialog";
@@ -8,11 +8,15 @@ import {
   approveLabel,
   detailFields,
   isDestructiveTarget,
+  TRAY_AUDIENCES,
   tileDiff,
   type TrayTile,
 } from "./memoryTray.logic";
 
 export type DetailsAction = "approve" | "reject" | "reinforce" | "close";
+
+const AUDIENCE_SELECT_CLASS =
+  "h-7 w-full max-w-48 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus-visible:border-ring";
 
 function detailsKeyAction(key: string, canReinforce: boolean): DetailsAction | null {
   switch (key) {
@@ -30,7 +34,39 @@ function detailsKeyAction(key: string, canReinforce: boolean): DetailsAction | n
   }
 }
 
-function DetailsBody({ tile }: { tile: TrayTile }) {
+function AudienceSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (audience: string) => void;
+}) {
+  return (
+    <select
+      aria-label="Audience"
+      className={AUDIENCE_SELECT_CLASS}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">none</option>
+      {TRAY_AUDIENCES.map((audience) => (
+        <option key={audience} value={audience}>
+          {audience}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function DetailsBody({
+  tile,
+  audience,
+  onAudienceChange,
+}: {
+  tile: TrayTile;
+  audience: string;
+  onAudienceChange: (audience: string) => void;
+}) {
   const diff = tileDiff(tile);
 
   return (
@@ -42,6 +78,8 @@ function DetailsBody({ tile }: { tile: TrayTile }) {
             <p className="m-0 text-sm/5">
               <DiffText segments={diff} />
             </p>
+          ) : field.editable === "audience" ? (
+            <AudienceSelect value={audience} onChange={onAudienceChange} />
           ) : (
             field.lines.map((line) => (
               <p key={line} className="m-0 text-sm/5 whitespace-pre-wrap">
@@ -62,23 +100,31 @@ export function MemoryDetails({
 }: {
   tile: TrayTile | null;
   finalFocus: RefObject<HTMLElement | null>;
-  onAction: (action: DetailsAction) => void;
+  onAction: (action: DetailsAction, audience: string) => void;
 }) {
   const canReinforce = tile?.suggestion?.action === "reinforce";
+  const [draft, setDraft] = useState<{ readonly tileId: string; readonly audience: string } | null>(
+    null,
+  );
+  const audience =
+    tile === null ? "" : draft?.tileId === tile.id ? draft.audience : (tile.audience ?? "");
+
+  const act = (action: DetailsAction) => onAction(action, audience);
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.ctrlKey || event.metaKey || event.altKey || event.nativeEvent.isComposing) return;
+    if (event.target instanceof Element && event.target.closest("select, input, textarea")) return;
 
     const action = detailsKeyAction(event.key, canReinforce);
     if (action === null) return;
 
     event.preventDefault();
     event.stopPropagation();
-    onAction(action);
+    act(action);
   };
 
   return (
-    <Dialog open={tile !== null} onOpenChange={(open) => (open ? undefined : onAction("close"))}>
+    <Dialog open={tile !== null} onOpenChange={(open) => (open ? undefined : act("close"))}>
       <DialogPopup
         aria-label="Memory proposal details"
         showCloseButton={false}
@@ -88,28 +134,32 @@ export function MemoryDetails({
         {tile === null ? null : (
           <>
             <DialogPanel>
-              <DetailsBody tile={tile} />
+              <DetailsBody
+                tile={tile}
+                audience={audience}
+                onAudienceChange={(next) => setDraft({ tileId: tile.id, audience: next })}
+              />
             </DialogPanel>
             <DialogFooter>
               <Button
                 size="sm"
                 variant={isDestructiveTarget(tile) ? "destructive-outline" : "default"}
-                onClick={() => onAction("approve")}
+                onClick={() => act("approve")}
               >
                 {approveLabel(tile)}
                 <Kbd>a</Kbd>
               </Button>
-              <Button size="sm" variant="ghost-destructive" onClick={() => onAction("reject")}>
+              <Button size="sm" variant="ghost-destructive" onClick={() => act("reject")}>
                 Reject
                 <Kbd>r</Kbd>
               </Button>
               {canReinforce ? (
-                <Button size="sm" variant="outline" onClick={() => onAction("reinforce")}>
+                <Button size="sm" variant="outline" onClick={() => act("reinforce")}>
                   Reinforce
                   <Kbd>n</Kbd>
                 </Button>
               ) : null}
-              <Button size="sm" variant="ghost-muted" onClick={() => onAction("close")}>
+              <Button size="sm" variant="ghost-muted" onClick={() => act("close")}>
                 Close
                 <Kbd>esc</Kbd>
               </Button>

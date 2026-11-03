@@ -10,6 +10,7 @@ import { Kbd } from "../ui/kbd";
 import { Textarea } from "../ui/textarea";
 import {
   approveLabel,
+  closeLine,
   diffRows,
   tileDiff,
   tileGlyph,
@@ -20,6 +21,7 @@ import {
 } from "./memoryTray.logic";
 
 const CLAIM_CLASS = "m-0 text-xs/4.5 text-card-foreground";
+const META_CLASS = "m-0 text-2xs/4 text-muted-foreground";
 
 const ACT_BUTTONS: ReadonlyArray<{
   readonly button: TileButton;
@@ -83,7 +85,7 @@ function DiffChange({ removed, added }: { removed: string; added: string }) {
   );
 }
 
-function TileBody({ tile, open }: { tile: TrayTile; open: boolean }) {
+function ClaimBody({ tile, open }: { tile: TrayTile; open: boolean }) {
   const diff = tileDiff(tile);
   if (diff === null) {
     return <p className={cn(CLAIM_CLASS, !open && "line-clamp-2")}>{tile.claim}</p>;
@@ -110,6 +112,22 @@ function TileBody({ tile, open }: { tile: TrayTile; open: boolean }) {
           <span className="text-diff-addition-foreground">{rows.added}</span>
         </p>
       )}
+    </>
+  );
+}
+
+function TileBody({ tile, open }: { tile: TrayTile; open: boolean }) {
+  const closes = closeLine(tile);
+
+  return (
+    <>
+      {closes === null ? null : (
+        <p className={cn(META_CLASS, !open && "line-clamp-1")}>Closes: {closes}</p>
+      )}
+      {tile.kind === "defect" && tile.where !== null ? (
+        <p className={cn(META_CLASS, "truncate font-mono")}>{tile.where}</p>
+      ) : null}
+      <ClaimBody tile={tile} open={open} />
     </>
   );
 }
@@ -246,6 +264,14 @@ export function MemoryTile({
         <span aria-hidden="true" className="flex-none">
           {tileGlyph(tile)}
         </span>
+        {tile.defectStatus !== null && tile.defectStatus !== "open" ? (
+          <span
+            data-memory-defect-status={tile.defectStatus}
+            className="flex-none rounded-sm border border-border px-1 text-3xs/3.5 uppercase"
+          >
+            {tile.defectStatus}
+          </span>
+        ) : null}
         <span className="ml-auto flex">
           {ACT_BUTTONS.map(({ button, glyph, hover, highlighted }) => (
             <button

@@ -142,6 +142,7 @@ import {
   type ShellApplicationEvent,
 } from "./orchestration-v2/ShellStream.ts";
 import { ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION } from "./orchestration-v2/ProjectionStore.ts";
+import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 import {
   coalesceLiveUpdatedEvents,
   coalesceThreadLiveStream,
@@ -3293,7 +3294,7 @@ export const layer = Layer.unwrap(
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
     const memoryProposals = Context.get(
-      yield* Layer.build(MemoryProposalPoller.layer),
+      yield* Layer.build(MemoryProposalPoller.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
       MemoryProposalPoller.MemoryProposalPoller,
     );
     const sql = yield* SqlClient.SqlClient;
