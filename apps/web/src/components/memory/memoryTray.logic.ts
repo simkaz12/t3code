@@ -22,8 +22,6 @@ export interface TrayTile extends MemoryProposalTile {
   readonly environmentId: EnvironmentId;
 }
 
-export type TraySection = MemoryProposalTile["section"];
-
 export const TRAY_AUDIENCES: ReadonlyArray<MemoryAudience> = [
   "decider",
   "builder",
@@ -32,7 +30,6 @@ export const TRAY_AUDIENCES: ReadonlyArray<MemoryAudience> = [
 ];
 
 export interface TileGroup {
-  readonly section: TraySection;
   readonly threadId: string;
   readonly threadTitle: string;
   readonly tiles: ReadonlyArray<TrayTile>;
@@ -80,22 +77,17 @@ function compareTiles(a: MemoryProposalTile, b: MemoryProposalTile): number {
   return b.createdAt.localeCompare(a.createdAt);
 }
 
-const sectionRank = (tile: Pick<MemoryProposalTile, "section">) =>
-  tile.section === "weak" ? 1 : 0;
-
 export function groupTiles(tiles: ReadonlyArray<TrayTile>): ReadonlyArray<TileGroup> {
   const byThread = new Map<
     string,
-    { section: TraySection; threadId: string; threadTitle: string; tiles: Array<TrayTile> }
+    { threadId: string; threadTitle: string; tiles: Array<TrayTile> }
   >();
-  const ordered = tiles.toSorted((a, b) => sectionRank(a) - sectionRank(b) || compareTiles(a, b));
+  const ordered = tiles.toSorted(compareTiles);
   for (const tile of ordered) {
     const threadId = `${tile.environmentId}:${tile.threadId}`;
-    const key = `${tile.section}|${threadId}`;
-    const group = byThread.get(key);
+    const group = byThread.get(threadId);
     if (group === undefined) {
-      byThread.set(key, {
-        section: tile.section,
+      byThread.set(threadId, {
         threadId,
         threadTitle: tile.threadTitle,
         tiles: [tile],
@@ -108,22 +100,12 @@ export function groupTiles(tiles: ReadonlyArray<TrayTile>): ReadonlyArray<TileGr
   return Array.from(byThread.values());
 }
 
-export const pendingCount = (tiles: ReadonlyArray<Pick<MemoryProposalTile, "section">>) =>
-  tiles.filter((tile) => tile.section === "real").length;
+export const pendingCount = (tiles: ReadonlyArray<MemoryProposalTile>) => tiles.length;
 
 export function rejectReason(draft: string): string | null {
   const reason = draft.trim();
 
   return reason === "" ? null : reason;
-}
-
-export function newTileIds(
-  seen: ReadonlySet<string> | null,
-  tiles: ReadonlyArray<Pick<MemoryProposalTile, "id">>,
-): ReadonlyArray<string> {
-  if (seen === null) return [];
-
-  return tiles.filter((tile) => !seen.has(tile.id)).map((tile) => tile.id);
 }
 
 export function suggestionFor(tile: MemoryProposalTile): TileSuggestion | null {
@@ -311,7 +293,6 @@ function expandSeed(tile: MemoryProposalTile): string {
     purpose: tile.purpose,
     audience: tile.audience,
     reader: tile.reader,
-    section: tile.section,
     stage: tile.stage,
     where: tile.where,
     trigger: tile.trigger,
@@ -415,29 +396,6 @@ export const tileKey = (tile: Pick<TrayTile, "environmentId" | "id">) =>
 
 export const orderedTiles = (tiles: ReadonlyArray<TrayTile>): ReadonlyArray<TrayTile> =>
   groupTiles(tiles).flatMap((group) => group.tiles);
-
-export interface TraySections {
-  readonly real: ReadonlyArray<TrayTile>;
-  readonly weak: ReadonlyArray<TrayTile>;
-}
-
-export function traySections(tiles: ReadonlyArray<TrayTile>): TraySections {
-  const ordered = orderedTiles(tiles);
-
-  return {
-    real: ordered.filter((tile) => tile.section === "real"),
-    weak: ordered.filter((tile) => tile.section === "weak"),
-  };
-}
-
-export function visibleTiles(
-  tiles: ReadonlyArray<TrayTile>,
-  weakOpen: boolean,
-): ReadonlyArray<TrayTile> {
-  const { real, weak } = traySections(tiles);
-
-  return weakOpen ? [...real, ...weak] : real;
-}
 
 export function tileGlyph(tile: Pick<MemoryProposalTile, "kind" | "suggestion" | "target">) {
   if (tile.suggestion?.action === "reinforce") return "≡";
@@ -778,7 +736,6 @@ export function detailFields(tile: MemoryProposalTile): ReadonlyArray<DetailFiel
     { label: "Audience", lines: [tile.audience ?? "none"], editable: "audience" },
     { label: "Reader", lines: [tile.reader ?? ""] },
     { label: "Stage", lines: [tile.stage] },
-    { label: "Section", lines: [tile.section] },
     { label: "Why (legacy)", lines: [tile.why ?? ""] },
     { label: "Thread", lines: [tile.threadTitle] },
     { label: "Branch", lines: [tile.branch ?? ""] },
@@ -805,4 +762,20 @@ export function detailFields(tile: MemoryProposalTile): ReadonlyArray<DetailFiel
   return fields
     .map((field) => ({ ...field, lines: field.lines.filter((line) => line.trim() !== "") }))
     .filter((field) => field.lines.length > 0);
+}
+
+export interface CollapsedLine {
+  readonly glyph: string;
+  readonly label: string;
+  readonly headline: string;
+}
+
+export function collapsedLine(
+  tile: Pick<MemoryProposalTile, "headline" | "kind" | "suggestion" | "target">,
+): CollapsedLine {
+  return {
+    glyph: tileGlyph(tile),
+    label: approveLabel(tile),
+    headline: tile.headline,
+  };
 }

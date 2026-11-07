@@ -169,7 +169,6 @@ it.effect("flattens a proposal into a tile with its labels, flags and lowest con
       rejected: null,
       branch: null,
       excerpt: "user: hi",
-      section: "real",
       audience: null,
       reader: null,
       stage: "",
@@ -372,14 +371,13 @@ it.effect("turns a refused settings write into a proposal error", () =>
   ),
 );
 
-it.effect("maps audience, reader, section, stage and the defect fields onto the tile", () =>
+it.effect("maps audience, reader, stage and the defect fields onto the tile", () =>
   Effect.sync(() => {
     const tile = MemoryProposalPoller.toTile(
       proposal("d1", {
         kind: "defect",
         audience: "navigator",
         reader: "trap",
-        section: "weak",
         defectStatus: "taken",
         takenBy: {
           threadId: "thread-2",
@@ -412,7 +410,6 @@ it.effect("maps audience, reader, section, stage and the defect fields onto the 
       kind: "defect",
       audience: "navigator",
       reader: "trap",
-      section: "weak",
       stage: "recon",
       where: "src/form.ts",
       trigger: "empty field",

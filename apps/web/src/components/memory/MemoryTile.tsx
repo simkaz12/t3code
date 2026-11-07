@@ -10,10 +10,9 @@ import { Kbd } from "../ui/kbd";
 import { Textarea } from "../ui/textarea";
 import {
   approveLabel,
-  closeLine,
-  diffRows,
+  collapsedLine,
+  targetSummary,
   tileDiff,
-  tileGlyph,
   tileProjectStyle,
   type DiffSegment,
   type TileButton,
@@ -85,49 +84,43 @@ function DiffChange({ removed, added }: { removed: string; added: string }) {
   );
 }
 
-function ClaimBody({ tile, open }: { tile: TrayTile; open: boolean }) {
+function ClaimBody({ tile }: { tile: TrayTile }) {
   const diff = tileDiff(tile);
-  if (diff === null) {
-    return <p className={cn(CLAIM_CLASS, !open && "line-clamp-2")}>{tile.claim}</p>;
-  }
-  if (open) {
-    return (
-      <p className={CLAIM_CLASS}>
-        <DiffText segments={diff} />
-      </p>
-    );
-  }
+  if (diff === null) return <p className={CLAIM_CLASS}>{tile.claim}</p>;
 
-  const rows = diffRows(diff);
+  return (
+    <p className={CLAIM_CLASS}>
+      <DiffText segments={diff} />
+    </p>
+  );
+}
+
+function TargetLines({ tile }: { tile: TrayTile }) {
+  const summary = targetSummary(tile);
+  if (summary === null) return null;
+
+  const lines = [summary.record, summary.keeper].filter((line) => line !== null);
+
   return (
     <>
-      {rows.removed === "" ? null : (
-        <p className={cn(CLAIM_CLASS, "line-clamp-1")}>
-          <span className="text-diff-deletion-foreground">{rows.removed}</span>
+      {lines.map((line) => (
+        <p key={line.label} className={META_CLASS}>
+          {line.label}: {line.text}
         </p>
-      )}
-      {rows.added === "" ? null : (
-        <p className={cn(CLAIM_CLASS, "line-clamp-1")}>
-          <span className="text-muted-foreground">→</span>{" "}
-          <span className="text-diff-addition-foreground">{rows.added}</span>
-        </p>
-      )}
+      ))}
+      {summary.reason === null ? null : <p className={META_CLASS}>Reason: {summary.reason}</p>}
     </>
   );
 }
 
-function TileBody({ tile, open }: { tile: TrayTile; open: boolean }) {
-  const closes = closeLine(tile);
-
+function TileBody({ tile }: { tile: TrayTile }) {
   return (
     <>
-      {closes === null ? null : (
-        <p className={cn(META_CLASS, !open && "line-clamp-1")}>Closes: {closes}</p>
-      )}
+      <TargetLines tile={tile} />
       {tile.kind === "defect" && tile.where !== null ? (
         <p className={cn(META_CLASS, "truncate font-mono")}>{tile.where}</p>
       ) : null}
-      <ClaimBody tile={tile} open={open} />
+      <ClaimBody tile={tile} />
     </>
   );
 }
@@ -213,6 +206,7 @@ export function MemoryTile({
   );
   const identity = tileProjectStyle(project);
   const open = cursor || editing;
+  const line = collapsedLine(tile);
   const labels: Record<TileButton, string> = {
     approve: approveLabel(tile),
     reject: "Reject",
@@ -228,7 +222,7 @@ export function MemoryTile({
       data-memory-tile={tile.id}
       style={{ "--project": identity.color } as CSSProperties}
       className={cn(
-        "surface-clip relative flex flex-col gap-1.5 rounded-none border border-(color:--tile-ring) bg-card py-2 pr-2.75 pl-3.75 text-card-foreground",
+        "surface-clip relative flex flex-col gap-1.5 rounded-none border border-(color:--tile-ring) bg-card py-1.5 pr-2.75 pl-3.75 text-card-foreground",
         "[--edge-paint:var(--tile-ring)] [--tile-ring:color-mix(in_srgb,var(--project)_55%,var(--border))]",
         "before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-(--project)",
         cursor && "bg-linear-to-b from-foreground/6 to-foreground/6 [--tile-ring:var(--project)]",
@@ -242,7 +236,7 @@ export function MemoryTile({
         }
       }}
     >
-      <div className="flex min-h-4 items-center gap-1.5 text-2xs/4 text-muted-foreground">
+      <div className="flex min-h-5 items-center gap-1.5 text-2xs/4 text-muted-foreground">
         <button
           type="button"
           tabIndex={-1}
@@ -254,56 +248,72 @@ export function MemoryTile({
           )}
           onClick={onToggleMark}
         />
-        <span
-          aria-hidden="true"
-          className="grid size-4 flex-none place-items-center rounded-sm text-3xs/none font-semibold text-(--project)"
-          style={{ backgroundColor: "color-mix(in srgb, var(--project) 14%, transparent)" }}
-        >
-          {identity.monogram}
-        </span>
         <span aria-hidden="true" className="flex-none">
-          {tileGlyph(tile)}
+          {line.glyph}
         </span>
-        {tile.defectStatus !== null && tile.defectStatus !== "open" ? (
-          <span
-            data-memory-defect-status={tile.defectStatus}
-            className="flex-none rounded-sm border border-border px-1 text-3xs/3.5 uppercase"
-          >
-            {tile.defectStatus}
+        <span data-memory-tile-label className="flex-none font-medium">
+          {line.label}
+        </span>
+        <span
+          data-memory-tile-headline
+          className={cn("min-w-0 flex-1 text-xs/4.5 text-card-foreground", !open && "truncate")}
+        >
+          {line.headline}
+        </span>
+        {open ? (
+          <span className="ml-auto flex">
+            {ACT_BUTTONS.map(({ button, glyph, hover, highlighted }) => (
+              <button
+                key={button}
+                type="button"
+                tabIndex={-1}
+                aria-label={labels[button]}
+                disabled={busy}
+                className={cn(
+                  "grid size-5 flex-none place-items-center rounded-md text-sm/none",
+                  hover,
+                  activeButton === button &&
+                    cn(
+                      highlighted,
+                      // oxlint-disable-next-line t3code/no-outset-state-indicators -- the tile head has no clipping ancestor and the owner-approved design offsets the button outline by 1px
+                      "outline outline-1 outline-offset-1 outline-(--project)",
+                    ),
+                )}
+                onClick={() => onButton(button)}
+              >
+                {glyph}
+              </button>
+            ))}
           </span>
         ) : null}
-        <span className="ml-auto flex">
-          {ACT_BUTTONS.map(({ button, glyph, hover, highlighted }) => (
-            <button
-              key={button}
-              type="button"
-              tabIndex={-1}
-              aria-label={labels[button]}
-              disabled={busy}
-              className={cn(
-                "grid size-5 flex-none place-items-center rounded-md text-sm/none",
-                hover,
-                activeButton === button &&
-                  cn(
-                    highlighted,
-                    // oxlint-disable-next-line t3code/no-outset-state-indicators -- the tile head has no clipping ancestor and the owner-approved design offsets the button outline by 1px
-                    "outline outline-1 outline-offset-1 outline-(--project)",
-                  ),
-              )}
-              onClick={() => onButton(button)}
-            >
-              {glyph}
-            </button>
-          ))}
-        </span>
       </div>
-      {editing ? (
-        <ClaimEditor initial={tile.claim} onSave={onSaveClaim} onCancel={onCancelEdit} />
-      ) : (
+      {open ? (
         <div className="flex flex-col gap-1.5">
-          <TileBody tile={tile} open={open} />
+          <div className="flex min-h-4 items-center gap-1.5 text-2xs/4 text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className="grid size-4 flex-none place-items-center rounded-sm text-3xs/none font-semibold text-(--project)"
+              style={{ backgroundColor: "color-mix(in srgb, var(--project) 14%, transparent)" }}
+            >
+              {identity.monogram}
+            </span>
+            {project === null ? null : <span className="truncate">{project.title}</span>}
+            {tile.defectStatus !== null && tile.defectStatus !== "open" ? (
+              <span
+                data-memory-defect-status={tile.defectStatus}
+                className="flex-none rounded-sm border border-border px-1 text-3xs/3.5 uppercase"
+              >
+                {tile.defectStatus}
+              </span>
+            ) : null}
+          </div>
+          {editing ? (
+            <ClaimEditor initial={tile.claim} onSave={onSaveClaim} onCancel={onCancelEdit} />
+          ) : (
+            <TileBody tile={tile} />
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

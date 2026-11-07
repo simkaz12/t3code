@@ -11,7 +11,6 @@ import {
   ProviderInstanceId,
   ThreadId,
   type OrchestrationV2ConversationMessage,
-  type OrchestrationV2ThreadHarvest,
   type Project,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -21,7 +20,6 @@ import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/http";
 
 import * as Environment from "../../../environment/ServerEnvironment.ts";
-import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as Settings from "../../../serverSettings.ts";
@@ -38,7 +36,7 @@ const projectId = ProjectId.make("project:mcp-test");
 
 const proposalResponse = {
   id: "proposal-1",
-  status: "pending",
+  status: "approved",
   kind: "fact",
   headline: "tinker needs the oktra-be container",
   fields: { claim: "claim", rejected: null },
@@ -79,11 +77,17 @@ const proposalResponse = {
   ],
   audience: "builder",
   reader: "trap",
-  section: "real",
   suggestion: { action: "reinforce", recordId: "rec-1", source: "v2", reasonClass: null },
   createdAt: "2026-11-01T10:00:00.000Z",
-  resolvedAt: null,
-  resolution: null,
+  resolvedAt: "2026-11-01T10:00:00.000Z",
+  resolution: { recordId: "rec-2" },
+};
+
+const reinforcedResponse = {
+  ...proposalResponse,
+  id: "proposal-2",
+  status: "reinforced",
+  resolution: { recordId: "rec-1" },
 };
 
 const takenDefect = {
@@ -121,21 +125,6 @@ const project = (workspaceRoot: string): Project => ({
   deletedAt: null,
 });
 
-interface HarvestState {
-  current: OrchestrationV2ThreadHarvest | null;
-  items: Array<{ readonly position: number; readonly sourceItemId: string }>;
-  readonly stamped: Array<OrchestrationV2ThreadHarvest | null>;
-}
-
-const harvestState = (itemCount: number): HarvestState => ({
-  current: null,
-  items: Array.from({ length: itemCount }, (_, position) => ({
-    position,
-    sourceItemId: `item:${position}`,
-  })),
-  stamped: [],
-});
-
 interface Recorded {
   readonly method: string;
   readonly url: string;
@@ -149,94 +138,95 @@ const readBody = (request: NodeHttp.IncomingMessage) =>
     request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
   });
 
-const stubServer = Effect.acquireRelease(
-  Effect.promise(
-    () =>
-      new Promise<{ url: string; requests: Array<Recorded>; close: () => Promise<void> }>(
-        (resolve) => {
-          const requests: Array<Recorded> = [];
-          const server = NodeHttp.createServer((request, response) => {
-            void readBody(request).then((raw) => {
-              requests.push({
-                method: request.method ?? "",
-                url: request.url ?? "",
-                body: raw === "" ? undefined : JSON.parse(raw),
+const stubServerWith = (proposal: unknown) =>
+  Effect.acquireRelease(
+    Effect.promise(
+      () =>
+        new Promise<{ url: string; requests: Array<Recorded>; close: () => Promise<void> }>(
+          (resolve) => {
+            const requests: Array<Recorded> = [];
+            const server = NodeHttp.createServer((request, response) => {
+              void readBody(request).then((raw) => {
+                requests.push({
+                  method: request.method ?? "",
+                  url: request.url ?? "",
+                  body: raw === "" ? undefined : JSON.parse(raw),
+                });
+                const url = new URL(request.url ?? "/", "http://stub");
+                response.setHeader("content-type", "application/json");
+                if (request.method === "POST" && url.pathname === "/v2/proposals") {
+                  response.statusCode = 201;
+                  response.end(JSON.stringify(proposal));
+                } else if (url.pathname === "/v2/recall") {
+                  response.end(
+                    JSON.stringify({
+                      results: [
+                        {
+                          id: "rec-1",
+                          source: "legacy",
+                          kind: "fact",
+                          headline: "Existing tinker note",
+                          fields: { claim: "claim", rejected: null },
+                          audience: "builder",
+                          reader: "lookup",
+                          scope: "oktra",
+                          purpose: "pitfall",
+                          topic: null,
+                          score: 0.8,
+                        },
+                      ],
+                    }),
+                  );
+                } else if (
+                  request.method === "POST" &&
+                  url.pathname === "/v2/records/defect-1/take"
+                ) {
+                  response.end(JSON.stringify(takenDefect));
+                } else if (
+                  request.method === "POST" &&
+                  url.pathname === "/v2/records/defect-1/release"
+                ) {
+                  response.end(JSON.stringify(releasedDefect));
+                } else if (url.pathname === "/v2/records/rec-1") {
+                  response.end(
+                    JSON.stringify({
+                      id: "rec-1",
+                      headline: "Existing tinker note",
+                      source: "legacy",
+                      collapsedIds: JSON.stringify(["old-1", "old-2"]),
+                      lineage: { supersededBy: null, supersedes: [] },
+                    }),
+                  );
+                } else {
+                  response.statusCode = 404;
+                  response.end("not found");
+                }
               });
-              const url = new URL(request.url ?? "/", "http://stub");
-              response.setHeader("content-type", "application/json");
-              if (request.method === "POST" && url.pathname === "/v2/proposals") {
-                response.statusCode = 201;
-                response.end(JSON.stringify(proposalResponse));
-              } else if (url.pathname === "/v2/recall") {
-                response.end(
-                  JSON.stringify({
-                    results: [
-                      {
-                        id: "rec-1",
-                        source: "legacy",
-                        kind: "fact",
-                        headline: "Existing tinker note",
-                        fields: { claim: "claim", rejected: null },
-                        audience: "builder",
-                        reader: "lookup",
-                        scope: "oktra",
-                        purpose: "pitfall",
-                        topic: null,
-                        score: 0.8,
-                      },
-                    ],
-                  }),
-                );
-              } else if (
-                request.method === "POST" &&
-                url.pathname === "/v2/records/defect-1/take"
-              ) {
-                response.end(JSON.stringify(takenDefect));
-              } else if (
-                request.method === "POST" &&
-                url.pathname === "/v2/records/defect-1/release"
-              ) {
-                response.end(JSON.stringify(releasedDefect));
-              } else if (url.pathname === "/v2/records/rec-1") {
-                response.end(
-                  JSON.stringify({
-                    id: "rec-1",
-                    headline: "Existing tinker note",
-                    source: "legacy",
-                    collapsedIds: JSON.stringify(["old-1", "old-2"]),
-                    lineage: { supersededBy: null, supersedes: [] },
-                  }),
-                );
-              } else {
-                response.statusCode = 404;
-                response.end("not found");
-              }
             });
-          });
-          server.listen(0, "127.0.0.1", () => {
-            const address = server.address();
-            const port = typeof address === "object" && address !== null ? address.port : 0;
-            resolve({
-              url: `http://127.0.0.1:${port}/v2`,
-              requests,
-              close: () => new Promise<void>((done) => server.close(() => done())),
+            server.listen(0, "127.0.0.1", () => {
+              const address = server.address();
+              const port = typeof address === "object" && address !== null ? address.port : 0;
+              resolve({
+                url: `http://127.0.0.1:${port}/v2`,
+                requests,
+                close: () => new Promise<void>((done) => server.close(() => done())),
+              });
             });
-          });
-        },
-      ),
-  ),
-  (server) => Effect.promise(() => server.close()),
-);
+          },
+        ),
+    ),
+    (server) => Effect.promise(() => server.close()),
+  );
+
+const stubServer = stubServerWith(proposalResponse);
 
 const callTool = Effect.fn("memoryTest.call")(function* <A, E, R>(options: {
   readonly memoryServerUrl: string;
   readonly memoryScope?: string;
   readonly workspaceRoot?: string;
   readonly messages?: ReadonlyArray<OrchestrationV2ConversationMessage>;
-  readonly harvest?: HarvestState;
   readonly call: (toolkit: Effect.Success<typeof MemoryToolkit>) => Effect.Effect<A, E, R>;
 }) {
-  const harvest = options.harvest ?? harvestState(0);
   const shell = { ...liveThreadShell(threadId), title: "Fix tinker", branch: "feature/tinker" };
   const settings = {
     ...DEFAULT_SERVER_SETTINGS,
@@ -261,30 +251,12 @@ const callTool = Effect.fn("memoryTest.call")(function* <A, E, R>(options: {
       issuedAt: 0,
     }),
     Layer.mock(ThreadManagement.ThreadManagementService)({
-      getThreadShell: () => Effect.succeed({ ...shell, harvest: harvest.current }),
-      getTimelinePage: (_threadId, page) => {
-        const matching =
-          page.itemId === undefined
-            ? harvest.items.filter((item) => item.position > (page.afterPosition ?? -1))
-            : harvest.items.filter((item) => item.sourceItemId === page.itemId);
-        return Effect.succeed({
-          items: matching.slice(0, page.limit),
-          totalItems: harvest.items.length,
-          hasMore: matching.length > page.limit,
-        }) as never;
-      },
+      getThreadShell: () => Effect.succeed(shell),
       getProjectThreadRecords: () =>
         Effect.succeed({
           ...idleThreadProjection(shell),
           messages: options.messages ?? [],
         }) as never,
-    }),
-    Layer.mock(Orchestrator.OrchestratorV2)({
-      setHarvestCheckpoint: (input) =>
-        Effect.sync(() => {
-          harvest.current = input.harvest;
-          harvest.stamped.push(input.harvest);
-        }),
     }),
     Layer.mock(Environment.ServerEnvironment)({
       getDescriptor: Effect.succeed({
@@ -377,13 +349,35 @@ it.effect("sends provenance, the last six messages and the scope from the settin
       ]);
       expect(result).toMatchObject({
         proposalId: "proposal-1",
-        status: "pending",
+        status: "approved",
+        recordId: "rec-2",
         flags: [
           "kind differs from declared",
           "low confidence: purpose",
           "restates an existing record",
         ],
         neighbours: [{ id: "rec-1", source: "v2", similarity: 0.93, relation: "restatement" }],
+      });
+    }),
+  ),
+);
+
+it.effect("reports a reinforced proposal with the neighbour's recordId", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServerWith(reinforcedResponse);
+
+      const result = yield* callTool({
+        memoryServerUrl: stub.url,
+        memoryScope: "oktra",
+        call: (toolkit) =>
+          toolkit.handle("memory_propose", proposeInput).pipe(Stream.unwrap, collect),
+      });
+
+      expect(result).toMatchObject({
+        proposalId: "proposal-2",
+        status: "reinforced",
+        recordId: "rec-1",
       });
     }),
   ),
@@ -398,12 +392,10 @@ it.effect("falls back to the repository directory name when no scope is set", ()
         memoryServerUrl: stub.url,
         workspaceRoot: "/home/sim/Projects/oktra-be/",
         call: (toolkit) =>
-          toolkit
-            .handle("memory_propose", { ...proposeInput, origin: "harvest" })
-            .pipe(Stream.unwrap, collect),
+          toolkit.handle("memory_propose", proposeInput).pipe(Stream.unwrap, collect),
       });
 
-      expect(stub.requests[0]?.body).toMatchObject({ scope: "oktra-be", origin: "harvest" });
+      expect(stub.requests[0]?.body).toMatchObject({ scope: "oktra-be", origin: "agent" });
     }),
   ),
 );
@@ -488,7 +480,7 @@ it.effect("refuses a defect missing a required field before calling the server",
   ),
 );
 
-it.effect("turns a proposal with closes into a close tile for that defect", () =>
+it.effect("sends a close target for the defect when a proposal carries closes", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const stub = yield* stubServer;
@@ -604,128 +596,6 @@ it.effect("takes a defect for the calling thread and releases it with no body", 
         url: "/v2/records/defect-1/release",
       });
       expect(released).toEqual({ recordId: "defect-1", defectStatus: "open", takenBy: null });
-    }),
-  ),
-);
-
-const beginHarvestCall = (stub: { readonly url: string }, harvest: HarvestState) =>
-  callTool({
-    memoryServerUrl: stub.url,
-    harvest,
-    call: (toolkit) => toolkit.handle("memory_harvest_begin", {}).pipe(Stream.unwrap, collect),
-  });
-
-it.effect("stamps the first harvest at the last message and reads from the start", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const stub = yield* stubServer;
-      const harvest = harvestState(450);
-
-      const result = yield* beginHarvestCall(stub, harvest);
-
-      expect(result).toEqual({ afterPosition: -1, since: null, threadId });
-      expect(harvest.current).toMatchObject({
-        position: 449,
-        itemId: "item:449",
-        runId: "run:mcp-test",
-        pendingRunId: null,
-      });
-      expect(stub.requests).toEqual([]);
-    }),
-  ),
-);
-
-it.effect(
-  "refuses to begin a harvest and leaves the checkpoint alone when memory is not configured",
-  () =>
-    Effect.gen(function* () {
-      const harvest = harvestState(5);
-
-      const result = yield* beginHarvestCall({ url: "" }, harvest);
-
-      expect(result).toMatchObject({ code: "invalid_request" });
-      expect(JSON.stringify(result)).toContain("not configured");
-      expect(harvest.stamped).toEqual([]);
-      expect(harvest.current).toBeNull();
-    }),
-);
-
-it.effect("returns the previous stamp on the second harvest and moves the checkpoint", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const stub = yield* stubServer;
-      const harvest = harvestState(10);
-
-      yield* beginHarvestCall(stub, harvest);
-      const first = harvest.current;
-      harvest.items.push({ position: 10, sourceItemId: "item:10" });
-      const result = yield* beginHarvestCall(stub, harvest);
-
-      expect(result).toEqual({
-        afterPosition: 9,
-        since: first === null ? null : DateTime.formatIso(first.at),
-        threadId,
-      });
-      expect(harvest.current).toMatchObject({ position: 10, itemId: "item:10" });
-      expect(harvest.stamped).toHaveLength(2);
-    }),
-  ),
-);
-
-it.effect("treats a pending-only stamp with position -1 as no previous checkpoint", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const stub = yield* stubServer;
-      const harvest = harvestState(5);
-      harvest.current = {
-        at: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
-        position: -1,
-        itemId: null,
-        runId: null,
-        pendingRunId: "run:pending",
-      };
-
-      const result = yield* beginHarvestCall(stub, harvest);
-
-      expect(result).toEqual({ afterPosition: -1, since: null, threadId });
-      expect(harvest.current).toMatchObject({ position: 4, pendingRunId: null });
-    }),
-  ),
-);
-
-it.effect("never returns a position past the last item after a rollback", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const stub = yield* stubServer;
-      const harvest = harvestState(10);
-
-      yield* beginHarvestCall(stub, harvest);
-      harvest.items = harvest.items.slice(0, 4);
-      const result = (yield* beginHarvestCall(stub, harvest)) as { afterPosition: number };
-
-      expect(result.afterPosition).toBeLessThanOrEqual(3);
-      expect(harvest.current).toMatchObject({ position: 3, itemId: "item:3" });
-    }),
-  ),
-);
-
-it.effect("follows the checkpoint item when positions shift", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const stub = yield* stubServer;
-      const harvest = harvestState(10);
-
-      yield* beginHarvestCall(stub, harvest);
-      harvest.items = [
-        { position: 0, sourceItemId: "item:9" },
-        ...Array.from({ length: 3 }, (_, index) => ({
-          position: index + 1,
-          sourceItemId: `item:new${index}`,
-        })),
-      ];
-      const result = yield* beginHarvestCall(stub, harvest);
-
-      expect(result).toMatchObject({ afterPosition: 0 });
     }),
   ),
 );

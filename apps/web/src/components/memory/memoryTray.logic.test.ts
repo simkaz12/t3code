@@ -16,7 +16,6 @@ import {
   groupTiles,
   initialCursorState,
   isDestructiveTarget,
-  newTileIds,
   orderedTiles,
   pendingCount,
   rejectReason,
@@ -27,14 +26,13 @@ import {
   tileGlyph,
   tileKey,
   tileProjectStyle,
-  traySections,
   type TrayCursorAction,
   trayCursorReducer,
   type TrayCursorState,
   type TrayTile,
-  visibleTiles,
   wordDiff,
   closeLine,
+  collapsedLine,
 } from "./memoryTray.logic";
 
 const environmentId = EnvironmentId.make("environment-1");
@@ -53,7 +51,6 @@ const tile = (id: string, overrides: Partial<TrayTile> = {}): TrayTile => ({
   purpose: "pitfall",
   audience: null,
   reader: null,
-  section: "real",
   stage: "",
   where: null,
   trigger: null,
@@ -99,35 +96,6 @@ describe("groupTiles", () => {
     ]);
   });
 
-  it("lists real tiles before weak ones and groups each section on its own", () => {
-    const groups = groupTiles([
-      tile("weak-flagged", { section: "weak", flags: ["demote: reader none"] }),
-      tile("real-plain"),
-      tile("weak-plain", { section: "weak" }),
-      tile("real-other", { threadId: "thread-2", threadTitle: "Thread two" }),
-    ]);
-
-    expect(
-      groups.map((group) => ({
-        section: group.section,
-        ids: group.tiles.map((entry) => entry.id),
-      })),
-    ).toEqual([
-      { section: "real", ids: ["real-plain"] },
-      { section: "real", ids: ["real-other"] },
-      { section: "weak", ids: ["weak-flagged", "weak-plain"] },
-    ]);
-  });
-
-  it("splits the tray into the two sections and hides weak tiles while collapsed", () => {
-    const tiles = [tile("weak", { section: "weak" }), tile("real")];
-
-    expect(traySections(tiles).real.map((entry) => entry.id)).toEqual(["real"]);
-    expect(traySections(tiles).weak.map((entry) => entry.id)).toEqual(["weak"]);
-    expect(visibleTiles(tiles, false).map((entry) => entry.id)).toEqual(["real"]);
-    expect(visibleTiles(tiles, true).map((entry) => entry.id)).toEqual(["real", "weak"]);
-  });
-
   it("keeps threads of different environments apart", () => {
     const groups = groupTiles([
       tile("a"),
@@ -139,15 +107,9 @@ describe("groupTiles", () => {
 });
 
 describe("badge and notifications", () => {
-  it("counts pending tiles in the real section only", () => {
+  it("counts every pending tile", () => {
     expect(pendingCount([tile("a"), tile("b")])).toBe(2);
-    expect(pendingCount([tile("a"), tile("b", { section: "weak" })])).toBe(1);
     expect(pendingCount([])).toBe(0);
-  });
-
-  it("reports only tiles that arrived after the first snapshot", () => {
-    expect(newTileIds(null, [tile("a")])).toEqual([]);
-    expect(newTileIds(new Set(["a"]), [tile("a"), tile("b")])).toEqual(["b"]);
   });
 });
 
@@ -549,6 +511,24 @@ describe("tileDiff", () => {
 });
 
 describe("tile presentation", () => {
+  it("collapsed tile shows glyph, action label and headline only", () => {
+    const line = collapsedLine(
+      tile("a", {
+        claim: "a long claim that stays out of the collapsed line",
+        target: {
+          recordId: "r1",
+          source: "v2",
+          action: "retire",
+          recordHeadline: "Old record",
+          replacementHeadline: null,
+          reason: "stale",
+        },
+      }),
+    );
+
+    expect(line).toEqual({ glyph: "↻", label: "Retire", headline: "Headline a" });
+  });
+
   it("picks one glyph by suggestion, target and kind", () => {
     const suggestion = (action: "reinforce" | "supersede") =>
       ({ action, recordId: "r", source: "v2", reasonClass: null }) as const;
@@ -610,7 +590,6 @@ describe("tile presentation", () => {
       "Headline",
       "Claim",
       "Audience",
-      "Section",
       "Thread",
       "Branch",
       "Origin",
