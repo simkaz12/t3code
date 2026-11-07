@@ -1316,7 +1316,6 @@ export const MemoryProposalTile = Schema.Struct({
   purpose: Schema.NullOr(Schema.String),
   audience: Schema.NullOr(MemoryAudience),
   reader: Schema.NullOr(Schema.String),
-  section: Schema.Literals(["real", "weak"]),
   stage: Schema.String,
   where: Schema.NullOr(Schema.String),
   trigger: Schema.NullOr(Schema.String),

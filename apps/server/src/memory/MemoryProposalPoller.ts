@@ -112,7 +112,6 @@ export function toTile(proposal: MemoryProposal): MemoryProposalTile {
     purpose: proposal.purpose,
     audience: tileAudience(proposal.audience),
     reader: proposal.reader ?? null,
-    section: proposal.section ?? "real",
     stage: provenance.stage ?? "",
     where: fields.where ?? null,
     trigger: fields.trigger ?? null,

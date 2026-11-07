@@ -1,9 +1,7 @@
 import { OrchestratorMcpFailure, TrimmedNonEmptyString } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
-import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
@@ -32,27 +30,10 @@ const shared = {
   ],
 };
 
-const MemoryHarvestBeginTool = Tool.make("memory_harvest_begin", {
-  ...shared,
-  dependencies: [...shared.dependencies, Orchestrator.OrchestratorV2, Crypto.Crypto],
-  description:
-    "Start a harvest of the calling thread. Stamps the checkpoint and returns `afterPosition` for t3_thread_read and `since`, the time of the previous harvest. Call it first, then read from `afterPosition`, then propose with origin harvest.",
-  success: Schema.Struct({
-    afterPosition: Schema.Int,
-    since: Schema.NullOr(Schema.String),
-    threadId: Schema.String,
-  }),
-})
-  .annotate(Tool.Title, "Start a thread harvest")
-  .annotate(Tool.Readonly, false)
-  .annotate(Tool.Destructive, false)
-  .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, false);
-
 const MemoryProposeTool = Tool.make("memory_propose", {
   ...shared,
   description:
-    "Queue a memory for the user to approve. Nothing is saved until they do. `kind`: fact, decision (needs `rejected`) or defect (needs `where`, `trigger`, `left_because`; `claim` is the symptom). `headline` is the claim in one sentence. No ticket ids, dates or file:line in `claim`. `closes` turns the proposal into a close tile for that defect. `flags` and `neighbours` show what the checks found and which saved records are close.",
+    "Propose a memory. The server saves it at once and returns `recordId`; the cleaner reviews it later. `status` is `approved` for a new record, or `reinforced` when the server counted your proposal against an existing record and wrote nothing new, and then `recordId` is that record. `kind`: fact, decision (needs `rejected`) or defect (needs `where`, `trigger`, `left_because`; `claim` is the symptom). `headline` is the claim in one sentence. No ticket ids, dates or file:line in `claim`. `closes` closes that defect at once. `flags` and `neighbours` show what the checks found and which saved records are close.",
   parameters: Schema.Struct({
     kind: MemoryKind,
     headline: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
@@ -66,11 +47,11 @@ const MemoryProposeTool = Tool.make("memory_propose", {
     audience: Schema.optional(MemoryAudience),
     stage: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(40))),
     closes: Schema.optional(TrimmedNonEmptyString),
-    origin: Schema.optional(Schema.Literals(["agent", "harvest"])),
   }),
   success: Schema.Struct({
     proposalId: Schema.String,
     status: Schema.String,
+    recordId: Schema.NullOr(Schema.String),
     flags: Schema.Array(Schema.String),
     neighbours: Schema.Array(
       Schema.Struct({
@@ -153,7 +134,6 @@ const MemoryReleaseTool = Tool.make("memory_release", {
   .annotate(Tool.OpenWorld, true);
 
 export const MemoryToolkit = Toolkit.make(
-  MemoryHarvestBeginTool,
   MemoryProposeTool,
   MemoryRecallTool,
   MemoryGetTool,

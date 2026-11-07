@@ -3,7 +3,6 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DeviceId,
@@ -101,11 +100,9 @@ const layerMemoryTest = McpHttpServer.toolkitRegistration(MemoryToolkit, MemoryH
   Layer.provide(
     Layer.mergeAll(
       Layer.mock(MemoryClient)({}),
-      Layer.mock(Orchestrator.OrchestratorV2)({}),
       Layer.mock(ProjectService.ProjectService)({}),
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
       Layer.mock(ServerSettings.ServerSettingsService)({}),
-      NodeCrypto.layer,
       McpToolAccessTestkit.liveThreadsLayer,
     ),
   ),
@@ -483,9 +480,13 @@ it.effect("registers every memory tool with an object-root input schema", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
 
-    expect(server.tools.map(({ tool }) => tool.name).toSorted()).toEqual(
-      Object.keys(MemoryToolkit.tools).toSorted(),
-    );
+    expect(server.tools.map(({ tool }) => tool.name).toSorted()).toEqual([
+      "memory_get",
+      "memory_propose",
+      "memory_recall",
+      "memory_release",
+      "memory_take",
+    ]);
     for (const { tool } of server.tools) {
       expect(tool.inputSchema.type, tool.name).toBe("object");
     }

@@ -20,7 +20,7 @@ export type MemoryAudience = typeof MemoryAudience.Type;
 export const MemoryDefectStatus = Schema.Literals(["open", "taken", "closed"]);
 export type MemoryDefectStatus = typeof MemoryDefectStatus.Type;
 
-export const MemoryOrigin = Schema.Literals(["agent", "harvest", "cleaner", "promotion"]);
+export const MemoryOrigin = Schema.Literals(["agent", "cleaner", "promotion"]);
 export type MemoryOrigin = typeof MemoryOrigin.Type;
 
 export const MemorySource = Schema.Literals(["v2", "legacy"]);
@@ -154,7 +154,6 @@ export const MemoryProposal = Schema.Struct({
   topic: Schema.NullOr(Schema.String),
   audience: optionalText,
   reader: optionalText,
-  section: Schema.optional(Schema.NullOr(Schema.Literals(["real", "weak"]))),
   defectStatus: Schema.optional(Schema.NullOr(MemoryDefectStatus)),
   takenBy: Schema.optional(Schema.NullOr(MemoryTakenBy)),
   checks: MemoryChecks,
@@ -163,6 +162,9 @@ export const MemoryProposal = Schema.Struct({
   suggestion: Schema.NullOr(MemorySuggestion),
   createdAt: Schema.String,
   resolvedAt: Schema.NullOr(Schema.String),
+  resolution: Schema.optional(
+    Schema.NullOr(Schema.Struct({ recordId: Schema.NullOr(Schema.String) })),
+  ),
 });
 export type MemoryProposal = typeof MemoryProposal.Type;
 
@@ -369,7 +371,7 @@ const validBase = (value: string) =>
       }),
   });
 
-export const configuredBase = (memoryServerUrl: string) =>
+const configuredBase = (memoryServerUrl: string) =>
   memoryServerUrl === ""
     ? Effect.fail(new MemoryClientError({ reason: "not-configured" }))
     : validBase(memoryServerUrl);

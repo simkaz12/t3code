@@ -1,7 +1,5 @@
 import {
   OrchestratorMcpFailure,
-  TurnItemId,
-  type OrchestrationV2ThreadHarvest,
   type OrchestrationV2ThreadShell,
   type ProjectId,
 } from "@t3tools/contracts";
@@ -11,30 +9,16 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
-import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
-import {
-  type Caller,
-  dispatchFailure,
-  loadCaller,
-  newCommandId,
-  unavailable,
-} from "../../threadAccess.ts";
-import {
-  configuredBase,
-  flagLabels,
-  MemoryClient,
-  MemoryClientError,
-  type MemoryProposeBody,
-} from "./client.ts";
+import { type Caller, loadCaller, unavailable } from "../../threadAccess.ts";
+import { flagLabels, MemoryClient, MemoryClientError, type MemoryProposeBody } from "./client.ts";
 import { MemoryToolkit } from "./tools.ts";
 
 const EXCERPT_MESSAGES = 6;
 const EXCERPT_CHARACTERS = 2000;
-const TIMELINE_PAGE_LIMIT = 200;
 
 const bareLink = (link: string) => link.replace(/^<(.*)>$/, "$1");
 
@@ -139,107 +123,7 @@ const threadExcerpt = Effect.fn("MemoryToolkit.excerpt")(function* (
   return buildExcerpt(ordered);
 });
 
-interface TimelineTail {
-  readonly position: number;
-  readonly itemId: string;
-}
-
-const timelineTail = Effect.fn("MemoryToolkit.timelineTail")(function* (
-  threads: Caller["threads"],
-  caller: OrchestrationV2ThreadShell,
-) {
-  let tail: TimelineTail | null = null;
-  let cursor = -1;
-
-  while (true) {
-    const page = yield* threads
-      .getTimelinePage(caller.id, {
-        afterPosition: cursor,
-        limit: TIMELINE_PAGE_LIMIT,
-        view: "messages",
-      })
-      .pipe(Effect.mapError(unavailable));
-    const last = page.items.at(-1);
-    if (last === undefined) return tail;
-
-    cursor = last.position;
-    tail = { position: last.position, itemId: last.sourceItemId };
-    if (!page.hasMore) return tail;
-  }
-});
-
-const resumePosition = Effect.fn("MemoryToolkit.resumePosition")(function* (
-  threads: Caller["threads"],
-  caller: OrchestrationV2ThreadShell,
-  previous: OrchestrationV2ThreadHarvest | null,
-  tail: TimelineTail | null,
-) {
-  if (previous === null) return -1;
-
-  const ceiling = tail?.position ?? -1;
-  if (previous.itemId !== null) {
-    const page = yield* threads
-      .getTimelinePage(caller.id, {
-        itemId: TurnItemId.make(previous.itemId),
-        limit: 1,
-        view: "messages",
-      })
-      .pipe(Effect.mapError(unavailable));
-    const found = page.items[0];
-    if (found !== undefined) return Math.min(found.position, ceiling);
-  }
-
-  return Math.min(previous.position, ceiling);
-});
-
-const beginHarvest = Effect.fn("MemoryToolkit.beginHarvest")(function* (
-  threads: Caller["threads"],
-  caller: OrchestrationV2ThreadShell,
-) {
-  const orchestrator = yield* Orchestrator.OrchestratorV2;
-  const settings = yield* (yield* Settings.ServerSettingsService).getSettings.pipe(
-    Effect.mapError(unavailable),
-  );
-  yield* configuredBase(settings.memoryServerUrl).pipe(Effect.mapError(memoryFailure));
-
-  const stamp = caller.harvest ?? null;
-  const previous = stamp !== null && stamp.position >= 0 ? stamp : null;
-
-  const tail = yield* timelineTail(threads, caller);
-  const afterPosition = yield* resumePosition(threads, caller, previous, tail);
-  const now = yield* DateTime.now;
-
-  yield* orchestrator
-    .setHarvestCheckpoint({
-      commandId: yield* newCommandId(),
-      threadId: caller.id,
-      harvest: {
-        at: now,
-        position: tail?.position ?? -1,
-        itemId: tail?.itemId ?? null,
-        runId: caller.activeRunId,
-        pendingRunId: null,
-      },
-    })
-    .pipe(Effect.mapError(dispatchFailure));
-
-  return {
-    afterPosition,
-    since: previous === null ? null : DateTime.formatIso(previous.at),
-    threadId: caller.id,
-  };
-});
-
 export const layer = McpToolAccess.toLayer(MemoryToolkit, {
-  memory_harvest_begin: McpToolAccess.actsAsCaller(() =>
-    Effect.gen(function* () {
-      const { threads, caller } = yield* loadCaller();
-      if (caller === undefined)
-        return yield* invalid("memory_harvest_begin needs a calling thread.");
-
-      return yield* beginHarvest(threads, caller);
-    }),
-  ),
   memory_propose: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const { scope, threads, caller } = yield* loadCaller();
@@ -269,7 +153,7 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
             excerpt,
             stage: input.stage ?? "",
           },
-          origin: input.origin ?? "agent",
+          origin: "agent",
           ...(input.audience === undefined ? {} : { audience: input.audience }),
           ...(input.closes === undefined
             ? {}
@@ -280,6 +164,7 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
       return {
         proposalId: proposal.id,
         status: proposal.status,
+        recordId: proposal.resolution?.recordId ?? null,
         flags: flagLabels(proposal.flags),
         neighbours: proposal.neighbours.map(({ id, source, headline, similarity, relation }) => ({
           id,

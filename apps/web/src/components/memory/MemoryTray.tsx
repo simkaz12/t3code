@@ -35,12 +35,11 @@ import {
   runTileAction,
   TILE_BUTTONS,
   tileKey,
-  traySections,
+  orderedTiles,
   trayCursorReducer,
   type TileAction,
   type TileButton,
   type TrayTile,
-  visibleTiles,
 } from "./memoryTray.logic";
 
 const STATUS_MS = 2_000;
@@ -54,7 +53,6 @@ const LEGEND: ReadonlyArray<readonly [string, string]> = [
   ["r", "reject"],
   ["e", "edit"],
   ["o", "details"],
-  ["w", "weak"],
   ["esc", "clear"],
 ];
 
@@ -109,37 +107,10 @@ function TrayFooter({
   );
 }
 
-function SectionLabel({ children }: { children: string }) {
+function ListLabel({ children }: { children: string }) {
   return (
     <div role="presentation" className="px-px pt-1 text-2xs/4 font-medium text-muted-foreground">
       {children}
-    </div>
-  );
-}
-
-function WeakHeader({
-  count,
-  open,
-  onToggle,
-}: {
-  count: number;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div role="presentation" className="px-px pt-1">
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-expanded={open}
-        data-memory-weak-toggle
-        className="flex w-full items-center gap-1 text-left text-2xs/4 font-medium text-muted-foreground hover:text-foreground"
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={onToggle}
-      >
-        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-        Weak ({count})
-      </button>
     </div>
   );
 }
@@ -210,10 +181,7 @@ function MemoryTrayBody({
   tiles: ReadonlyArray<TrayTile>;
 }) {
   const listId = useId();
-  const [weakOpen, setWeakOpen] = useState(false);
-  const sections = traySections(tiles);
-  const allTiles = [...sections.real, ...sections.weak];
-  const ordered = visibleTiles(tiles, weakOpen);
+  const ordered = orderedTiles(tiles);
   const keys = ordered.map(tileKey);
   const [cursorState, dispatch] = useReducer(trayCursorReducer, initialCursorState);
   const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(new Set());
@@ -233,9 +201,9 @@ function MemoryTrayBody({
   const cursorIndex = cursorState.cursor;
   const cursorTile = ordered[cursorIndex];
   const cursorKey = cursorTile === undefined ? null : tileKey(cursorTile);
-  const detailsTile = allTiles.find((tile) => tileKey(tile) === detailsKey) ?? null;
+  const detailsTile = ordered.find((tile) => tileKey(tile) === detailsKey) ?? null;
   const rejectingTiles =
-    rejectingKeys === null ? [] : allTiles.filter((tile) => rejectingKeys.includes(tileKey(tile)));
+    rejectingKeys === null ? [] : ordered.filter((tile) => rejectingKeys.includes(tileKey(tile)));
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the cursor tile into view once the DOM has the new open tile
   useEffect(() => {
@@ -403,9 +371,6 @@ function MemoryTrayBody({
       case "o":
         setDetailsKey(cursorKey);
         break;
-      case "w":
-        if (sections.weak.length > 0) setWeakOpen((current) => !current);
-        break;
       case "?":
         setLegendOpen((current) => !current);
         break;
@@ -467,23 +432,8 @@ function MemoryTrayBody({
           className="flex min-h-0 flex-col gap-2 overflow-y-auto p-px outline-none"
           onKeyDown={handleKeyDown}
         >
-          <SectionLabel>{`Proposals (${sections.real.length})`}</SectionLabel>
-          {sections.real.length === 0 ? (
-            <p role="presentation" className="m-0 text-xs text-muted-foreground">
-              Nothing waiting for approval.
-            </p>
-          ) : null}
-          {sections.real.map((tile, index) => renderTile(tile, index))}
-          {sections.weak.length > 0 ? (
-            <WeakHeader
-              count={sections.weak.length}
-              open={weakOpen}
-              onToggle={() => setWeakOpen((current) => !current)}
-            />
-          ) : null}
-          {weakOpen
-            ? sections.weak.map((tile, index) => renderTile(tile, sections.real.length + index))
-            : null}
+          <ListLabel>{`Cleaner (${ordered.length})`}</ListLabel>
+          {ordered.map((tile, index) => renderTile(tile, index))}
         </div>
       )}
       {rejectingTiles.length > 0 ? (
