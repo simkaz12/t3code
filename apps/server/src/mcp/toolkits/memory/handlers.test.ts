@@ -38,9 +38,9 @@ const proposalResponse = {
   id: "proposal-1",
   status: "approved",
   kind: "fact",
-  headline: "tinker needs the oktra-be container",
+  headline: "tinker needs the acme-api container",
   fields: { claim: "claim", rejected: null },
-  scope: "oktra",
+  scope: "acme",
   provenance: {
     threadId,
     threadTitle: "Fix tinker",
@@ -88,6 +88,61 @@ const reinforcedResponse = {
   id: "proposal-2",
   status: "reinforced",
   resolution: { recordId: "rec-1" },
+};
+
+const askedResponse = {
+  ...proposalResponse,
+  id: "proposal-3",
+  status: "asked",
+  headline: "The acme report sync is nightly, hourly was rejected",
+  fields: {
+    claim: "The acme report sync stays nightly; hourly hit the API rate limit.",
+    rejected: null,
+  },
+  flags: [],
+  neighbours: [],
+  suggestion: null,
+  resolvedAt: null,
+  resolution: null,
+  ask: {
+    existing: {
+      id: "rec-9",
+      source: "v2",
+      kind: "decision",
+      headline: "The acme report sync runs nightly at 03:00",
+      fields: {
+        claim: "The acme report sync runs nightly at 03:00.",
+        rejected: "Hourly runs, because of the reporting API rate limit.",
+      },
+    },
+    similarity: 0.86,
+    sameSubject: 0.8,
+    newCoversOld: 0.4,
+    existingIsFold: false,
+    askedAt: "2026-11-13T10:00:00.000Z",
+    expiresAt: "2026-11-13T10:10:00.000Z",
+    answer: null,
+    answeredAt: null,
+    reason: null,
+    foldRecordId: null,
+    foldCoversOld: null,
+    foldCoversNew: null,
+  },
+};
+
+const foldedResponse = {
+  ...askedResponse,
+  status: "folded",
+  resolvedAt: "2026-11-13T10:01:00.000Z",
+  resolution: { recordId: "rec-10" },
+};
+
+const coversResponse = {
+  ...proposalResponse,
+  id: "proposal-4",
+  flags: ["covers:rec-1"],
+  neighbours: [],
+  suggestion: null,
 };
 
 const takenDefect = {
@@ -138,7 +193,13 @@ const readBody = (request: NodeHttp.IncomingMessage) =>
     request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
   });
 
-const stubServerWith = (proposal: unknown) =>
+const stubServerWith = (
+  proposal: unknown,
+  answer: { readonly status: number; readonly body: unknown } = {
+    status: 200,
+    body: foldedResponse,
+  },
+) =>
   Effect.acquireRelease(
     Effect.promise(
       () =>
@@ -157,6 +218,12 @@ const stubServerWith = (proposal: unknown) =>
                 if (request.method === "POST" && url.pathname === "/v2/proposals") {
                   response.statusCode = 201;
                   response.end(JSON.stringify(proposal));
+                } else if (
+                  request.method === "POST" &&
+                  url.pathname === "/v2/proposals/proposal-3/answer"
+                ) {
+                  response.statusCode = answer.status;
+                  response.end(JSON.stringify(answer.body));
                 } else if (url.pathname === "/v2/recall") {
                   response.end(
                     JSON.stringify({
@@ -169,7 +236,7 @@ const stubServerWith = (proposal: unknown) =>
                           fields: { claim: "claim", rejected: null },
                           audience: "builder",
                           reader: "lookup",
-                          scope: "oktra",
+                          scope: "acme",
                           purpose: "pitfall",
                           topic: null,
                           score: 0.8,
@@ -269,7 +336,7 @@ const callTool = Effect.fn("memoryTest.call")(function* <A, E, R>(options: {
     }),
     Layer.mock(Settings.ServerSettingsService)({ getSettings: Effect.succeed(settings) }),
     Layer.mock(ProjectService.ProjectService)({
-      getById: () => Effect.succeedSome(project(options.workspaceRoot ?? "/work/oktra-be")),
+      getById: () => Effect.succeedSome(project(options.workspaceRoot ?? "/work/acme-api")),
     }),
     MemoryClient.layer.pipe(
       Layer.provide(FetchHttpClient.layer),
@@ -296,7 +363,7 @@ const collect = <E, R>(stream: Stream.Stream<{ readonly result: unknown }, E, R>
 
 const proposeInput = {
   kind: "fact",
-  headline: "tinker needs the oktra-be container",
+  headline: "tinker needs the acme-api container",
   claim: "Run tinker inside the container.",
 } as const;
 
@@ -310,7 +377,7 @@ it.effect("sends provenance, the last six messages and the scope from the settin
 
       const result = yield* callTool({
         memoryServerUrl: stub.url,
-        memoryScope: "oktra",
+        memoryScope: "acme",
         messages: [...messages].reverse(),
         call: (toolkit) =>
           toolkit.handle("memory_propose", proposeInput).pipe(Stream.unwrap, collect),
@@ -322,7 +389,7 @@ it.effect("sends provenance, the last six messages and the scope from the settin
         kind: "fact",
         headline: proposeInput.headline,
         fields: { claim: proposeInput.claim },
-        scope: "oktra",
+        scope: "acme",
         origin: "agent",
         provenance: {
           threadId,
@@ -369,7 +436,7 @@ it.effect("reports a reinforced proposal with the neighbour's recordId", () =>
 
       const result = yield* callTool({
         memoryServerUrl: stub.url,
-        memoryScope: "oktra",
+        memoryScope: "acme",
         call: (toolkit) =>
           toolkit.handle("memory_propose", proposeInput).pipe(Stream.unwrap, collect),
       });
@@ -383,6 +450,206 @@ it.effect("reports a reinforced proposal with the neighbour's recordId", () =>
   ),
 );
 
+it.effect("labels a covers flag and returns no ask when the save went through", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServerWith(coversResponse);
+
+      const result = yield* callTool({
+        memoryServerUrl: stub.url,
+        memoryScope: "acme",
+        call: (toolkit) =>
+          toolkit.handle("memory_propose", proposeInput).pipe(Stream.unwrap, collect),
+      });
+
+      expect(result).toMatchObject({
+        status: "approved",
+        flags: ["covers an existing record"],
+        ask: null,
+      });
+    }),
+  ),
+);
+
+it.effect("hands an asked proposal back with the existing record and the instruction", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServerWith(askedResponse);
+
+      const result = yield* callTool({
+        memoryServerUrl: stub.url,
+        memoryScope: "acme",
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_propose", {
+              kind: "decision",
+              headline: "The acme report sync is nightly, hourly was rejected",
+              claim: "The acme report sync stays nightly.",
+              rejected: "Hourly runs, because they hit the API rate limit.",
+            })
+            .pipe(Stream.unwrap, collect),
+      });
+
+      expect(result).toMatchObject({
+        proposalId: "proposal-3",
+        status: "asked",
+        recordId: null,
+        ask: {
+          proposalId: "proposal-3",
+          existing: {
+            id: "rec-9",
+            kind: "decision",
+            headline: "The acme report sync runs nightly at 03:00",
+            claim: "The acme report sync runs nightly at 03:00.",
+            rejected: "Hourly runs, because of the reporting API rate limit.",
+          },
+        },
+      });
+      const { ask } = result as { ask: { instruction: string } };
+      expect(ask.instruction).toContain("Your note was not saved yet.");
+      expect(ask.instruction).toContain("The acme report sync runs nightly at 03:00.");
+      expect(ask.instruction).toContain(
+        "Rejected: Hourly runs, because they hit the API rate limit.",
+      );
+      expect(ask.instruction).toContain('memory_answer with answers: "proposal-3"');
+    }),
+  ),
+);
+
+it.effect("sends a merged note as a fold answer and reports the fold record", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServerWith(askedResponse);
+
+      const result = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_answer", {
+              answers: "proposal-3",
+              kind: "decision",
+              headline: "The acme report sync is nightly at 03:00",
+              claim: "The acme report sync runs nightly at 03:00.",
+              rejected: "Hourly runs, because of the reporting API rate limit.",
+            })
+            .pipe(Stream.unwrap, collect),
+      });
+
+      expect(stub.requests).toEqual([
+        {
+          method: "POST",
+          url: "/v2/proposals/proposal-3/answer",
+          body: {
+            action: "fold",
+            kind: "decision",
+            headline: "The acme report sync is nightly at 03:00",
+            fields: {
+              claim: "The acme report sync runs nightly at 03:00.",
+              rejected: "Hourly runs, because of the reporting API rate limit.",
+            },
+          },
+        },
+      ]);
+      expect(result).toEqual({ proposalId: "proposal-3", status: "folded", recordId: "rec-10" });
+    }),
+  ),
+);
+
+it.effect("sends keep_both as a reason only", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServerWith(askedResponse, {
+        status: 200,
+        body: { ...askedResponse, status: "approved", resolution: { recordId: "rec-11" } },
+      });
+
+      const result = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_answer", {
+              answers: "proposal-3",
+              keep_both: "The existing note is about the 03:00 start time.",
+            })
+            .pipe(Stream.unwrap, collect),
+      });
+
+      expect(stub.requests[0]?.body).toEqual({
+        action: "keep_both",
+        reason: "The existing note is about the 03:00 start time.",
+      });
+      expect(result).toEqual({ proposalId: "proposal-3", status: "approved", recordId: "rec-11" });
+    }),
+  ),
+);
+
+it.effect("surfaces the server's 409 message on an answer", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServerWith(askedResponse, {
+        status: 409,
+        body: { error: "proposal already answered" },
+      });
+
+      const result = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_answer", { answers: "proposal-3", keep_both: "A different fact." })
+            .pipe(Stream.unwrap, collect),
+      });
+
+      expect(result).toMatchObject({ code: "orchestration_error" });
+      expect(JSON.stringify(result)).toContain("409");
+      expect(JSON.stringify(result)).toContain("proposal already answered");
+    }),
+  ),
+);
+
+it.effect("refuses an answer that mixes keep_both with a note or leaves it incomplete", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServerWith(askedResponse);
+
+      const mixed = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_answer", {
+              answers: "proposal-3",
+              keep_both: "A different fact.",
+              claim: "A merged claim.",
+            })
+            .pipe(Stream.unwrap, collect),
+      });
+      const incomplete = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_answer", { answers: "proposal-3", claim: "A merged claim." })
+            .pipe(Stream.unwrap, collect),
+      });
+      const decision = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_answer", {
+              answers: "proposal-3",
+              kind: "decision",
+              headline: "Nightly sync",
+              claim: "A merged claim.",
+            })
+            .pipe(Stream.unwrap, collect),
+      });
+
+      expect(mixed).toMatchObject({ code: "invalid_request" });
+      expect(incomplete).toMatchObject({ code: "invalid_request" });
+      expect(decision).toMatchObject({ code: "invalid_request" });
+      expect(stub.requests).toEqual([]);
+    }),
+  ),
+);
+
 it.effect("falls back to the repository directory name when no scope is set", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -390,12 +657,12 @@ it.effect("falls back to the repository directory name when no scope is set", ()
 
       yield* callTool({
         memoryServerUrl: stub.url,
-        workspaceRoot: "/home/sim/Projects/oktra-be/",
+        workspaceRoot: "/home/user/projects/acme-api/",
         call: (toolkit) =>
           toolkit.handle("memory_propose", proposeInput).pipe(Stream.unwrap, collect),
       });
 
-      expect(stub.requests[0]?.body).toMatchObject({ scope: "oktra-be", origin: "agent" });
+      expect(stub.requests[0]?.body).toMatchObject({ scope: "acme-api", origin: "agent" });
     }),
   ),
 );
@@ -438,7 +705,7 @@ it.effect("proposes a defect with its fields, audience and stage", () =>
 
       yield* callTool({
         memoryServerUrl: stub.url,
-        memoryScope: "oktra",
+        memoryScope: "acme",
         call: (toolkit) =>
           toolkit.handle("memory_propose", defectInput).pipe(Stream.unwrap, collect),
       });
@@ -487,7 +754,7 @@ it.effect("sends a close target for the defect when a proposal carries closes", 
 
       yield* callTool({
         memoryServerUrl: stub.url,
-        memoryScope: "oktra",
+        memoryScope: "acme",
         call: (toolkit) =>
           toolkit
             .handle("memory_propose", {
@@ -529,7 +796,7 @@ it.effect("recalls in the project scope and reads one record", () =>
 
       const recalled = yield* callTool({
         memoryServerUrl: stub.url,
-        memoryScope: "oktra",
+        memoryScope: "acme",
         call: (toolkit) =>
           toolkit
             .handle("memory_recall", {
@@ -549,7 +816,7 @@ it.effect("recalls in the project scope and reads one record", () =>
       const query = new URL(stub.requests[0]?.url ?? "", "http://stub").searchParams;
       expect(Object.fromEntries(query)).toEqual({
         q: "tinker psysh",
-        scope: "oktra",
+        scope: "acme",
         kind: "fact",
         audience: "builder",
         limit: "5",

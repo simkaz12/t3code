@@ -481,6 +481,7 @@ it.effect("registers every memory tool with an object-root input schema", () =>
     const server = yield* McpServer.McpServer;
 
     expect(server.tools.map(({ tool }) => tool.name).toSorted()).toEqual([
+      "memory_answer",
       "memory_get",
       "memory_propose",
       "memory_recall",

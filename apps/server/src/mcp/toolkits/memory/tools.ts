@@ -33,7 +33,7 @@ const shared = {
 const MemoryProposeTool = Tool.make("memory_propose", {
   ...shared,
   description:
-    "Propose a memory. The server saves it at once and returns `recordId`; the cleaner reviews it later. `status` is `approved` for a new record, or `reinforced` when the server counted your proposal against an existing record and wrote nothing new, and then `recordId` is that record. `kind`: fact, decision (needs `rejected`) or defect (needs `where`, `trigger`, `left_because`; `claim` is the symptom). `headline` is the claim in one sentence. No ticket ids, dates or file:line in `claim`. `closes` closes that defect at once. `flags` and `neighbours` show what the checks found and which saved records are close.",
+    "Propose a memory. The server saves it at once and returns `recordId`; the cleaner reviews it later. `status` is `approved` for a new record, or `reinforced` when the server counted your proposal against an existing record and wrote nothing new, and then `recordId` is that record. Status `asked` means the note is held, not saved: `ask` carries the existing record and the reply to give, and you answer with `memory_answer` in the same turn. `kind`: fact, decision (needs `rejected`) or defect (needs `where`, `trigger`, `left_because`; `claim` is the symptom). `headline` is the claim in one sentence. No ticket ids, dates or file:line in `claim`. `closes` closes that defect at once. `flags` and `neighbours` show what the checks found and which saved records are close.",
   parameters: Schema.Struct({
     kind: MemoryKind,
     headline: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
@@ -62,9 +62,46 @@ const MemoryProposeTool = Tool.make("memory_propose", {
         relation: Schema.NullOr(Schema.String),
       }),
     ),
+    ask: Schema.NullOr(
+      Schema.Struct({
+        proposalId: Schema.String,
+        existing: Schema.Struct({
+          id: Schema.String,
+          kind: MemoryKind,
+          headline: Schema.String,
+          claim: Schema.String,
+          rejected: Schema.NullOr(Schema.String),
+        }),
+        instruction: Schema.String,
+      }),
+    ),
   }),
 })
   .annotate(Tool.Title, "Propose a memory")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, true);
+
+const MemoryAnswerTool = Tool.make("memory_answer", {
+  ...shared,
+  description:
+    "Answer a held `memory_propose` (status `asked`). Pass `answers` (its `proposalId`) and either one merged note (`kind`, `headline`, `claim`, and `rejected` for a decision) that replaces both records, or `keep_both` with a one-line reason naming the fact in the existing note that your note is not about. Returns the resulting `status` and `recordId`.",
+  parameters: Schema.Struct({
+    answers: TrimmedNonEmptyString,
+    keep_both: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
+    kind: Schema.optional(Schema.Literals(["fact", "decision"])),
+    headline: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(100))),
+    claim: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(2000))),
+    rejected: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(2000))),
+  }),
+  success: Schema.Struct({
+    proposalId: Schema.String,
+    status: Schema.String,
+    recordId: Schema.NullOr(Schema.String),
+  }),
+})
+  .annotate(Tool.Title, "Answer a held memory")
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
@@ -135,6 +172,7 @@ const MemoryReleaseTool = Tool.make("memory_release", {
 
 export const MemoryToolkit = Toolkit.make(
   MemoryProposeTool,
+  MemoryAnswerTool,
   MemoryRecallTool,
   MemoryGetTool,
   MemoryTakeTool,

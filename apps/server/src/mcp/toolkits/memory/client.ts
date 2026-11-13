@@ -130,6 +130,29 @@ export const MemorySuggestion = Schema.Struct({
 });
 export type MemorySuggestion = typeof MemorySuggestion.Type;
 
+export const MemoryAsk = Schema.Struct({
+  existing: Schema.Struct({
+    id: Schema.String,
+    source: MemorySource,
+    kind: MemoryKind,
+    headline: Schema.String,
+    fields: MemoryRecordFields,
+  }),
+  similarity: Schema.Number,
+  sameSubject: Schema.Number,
+  newCoversOld: Schema.Number,
+  existingIsFold: Schema.Boolean,
+  askedAt: Schema.String,
+  expiresAt: Schema.String,
+  answer: Schema.NullOr(Schema.Literals(["fold", "keep_both", "unanswered"])),
+  answeredAt: Schema.NullOr(Schema.String),
+  reason: Schema.NullOr(Schema.String),
+  foldRecordId: Schema.NullOr(Schema.String),
+  foldCoversOld: Schema.NullOr(Schema.Number),
+  foldCoversNew: Schema.NullOr(Schema.Number),
+});
+export type MemoryAsk = typeof MemoryAsk.Type;
+
 export const MemoryChecks = Schema.Struct({
   status: Schema.Literals(["ok", "unavailable", "skipped"]),
   reason: Schema.optional(Schema.String),
@@ -142,7 +165,7 @@ export type MemoryChecks = typeof MemoryChecks.Type;
 
 export const MemoryProposal = Schema.Struct({
   id: Schema.String,
-  status: Schema.Literals(["pending", "approved", "rejected", "reinforced"]),
+  status: Schema.Literals(["pending", "approved", "rejected", "reinforced", "asked", "folded"]),
   kind: MemoryKind,
   headline: Schema.String,
   fields: MemoryRecordFields,
@@ -160,6 +183,7 @@ export const MemoryProposal = Schema.Struct({
   flags: Schema.Array(Schema.String),
   neighbours: Schema.Array(MemoryNeighbour),
   suggestion: Schema.NullOr(MemorySuggestion),
+  ask: Schema.optional(Schema.NullOr(MemoryAsk)),
   createdAt: Schema.String,
   resolvedAt: Schema.NullOr(Schema.String),
   resolution: Schema.optional(
@@ -197,6 +221,15 @@ export type MemoryServerSettings = typeof MemoryServerSettings.Type;
 const RecallResponse = Schema.Struct({ results: Schema.Array(MemoryRecallResult) });
 const ProposalList = Schema.Array(MemoryProposal);
 const RecordBody = Schema.Record(Schema.String, Schema.Unknown);
+
+export type MemoryAnswerBody =
+  | {
+      readonly action: "fold";
+      readonly kind: "fact" | "decision";
+      readonly headline: string;
+      readonly fields: { readonly claim: string; readonly rejected?: string };
+    }
+  | { readonly action: "keep_both"; readonly reason: string };
 
 export interface MemoryApproveBody {
   readonly edits?: {
@@ -253,6 +286,10 @@ export class MemoryClientError extends Schema.TaggedError<MemoryClientError>()(
 
 export interface MemoryClientShape {
   readonly propose: (body: MemoryProposeBody) => Effect.Effect<MemoryProposal, MemoryClientError>;
+  readonly answer: (
+    id: string,
+    body: MemoryAnswerBody,
+  ) => Effect.Effect<MemoryProposal, MemoryClientError>;
   readonly recall: (
     query: MemoryRecallQuery,
   ) => Effect.Effect<ReadonlyArray<MemoryRecallResult>, MemoryClientError>;
@@ -290,6 +327,8 @@ const FLAG_LABELS: Readonly<Record<string, string>> = {
   restatement: "restates an existing record",
   replacement: "replaces an existing record",
   relation_unavailable: "relation check failed",
+  covers: "covers an existing record",
+  pair_unavailable: "containment check failed",
 };
 
 const humanize = (value: string) => value.replaceAll("_", " ");
@@ -456,6 +495,13 @@ const makeMemoryClient = (
       call(
         "propose",
         send("POST", "/proposals", { body }).pipe(Effect.flatMap(decoded(MemoryProposal))),
+      ),
+    answer: (id, body) =>
+      call(
+        "answer",
+        send("POST", `/proposals/${segment(id)}/answer`, { body }).pipe(
+          Effect.flatMap(decoded(MemoryProposal)),
+        ),
       ),
     recall: (query) =>
       call(

@@ -14,7 +14,14 @@ import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { type Caller, loadCaller, unavailable } from "../../threadAccess.ts";
-import { flagLabels, MemoryClient, MemoryClientError, type MemoryProposeBody } from "./client.ts";
+import {
+  flagLabels,
+  MemoryClient,
+  MemoryClientError,
+  type MemoryAnswerBody,
+  type MemoryAsk,
+  type MemoryProposeBody,
+} from "./client.ts";
 import { MemoryToolkit } from "./tools.ts";
 
 const EXCERPT_MESSAGES = 6;
@@ -49,6 +56,7 @@ const invalid = (message: string) =>
 
 interface ProposeInput {
   readonly kind: MemoryProposeBody["kind"];
+  readonly headline: string;
   readonly claim: string;
   readonly rejected?: string | undefined;
   readonly where?: string | undefined;
@@ -58,6 +66,34 @@ interface ProposeInput {
   readonly impact?: string | undefined;
   readonly closes?: string | undefined;
 }
+
+const noteText = (headline: string, claim: string, rejected: string | null | undefined) =>
+  [headline, claim, ...(rejected ? [`Rejected: ${rejected}`] : [])].join("\n");
+
+const askInstruction = (
+  proposalId: string,
+  existing: MemoryAsk["existing"],
+  incoming: Pick<ProposeInput, "headline" | "claim" | "rejected">,
+): string =>
+  [
+    "Your note was not saved yet. The store says it looks like the same thing as a note it already holds.",
+    "",
+    "EXISTING NOTE (already in the store):",
+    noteText(existing.headline, existing.fields.claim, existing.fields.rejected),
+    "",
+    "YOUR NOTE (the one you just sent):",
+    noteText(incoming.headline, incoming.claim, incoming.rejected),
+    "",
+    "Send back the one merged note that holds everything from both. It replaces both in the store.",
+    "Keep every concrete detail from both notes: names, numbers, paths, config keys, dates, rejected options and the reasons they were rejected.",
+    "Add nothing that is in neither note. No new advice, no inference, no framing of your own.",
+    "Where the notes conflict, your note is the newer one and wins. Give the newer value and say that the older value was replaced.",
+    "Write it as one fact or one decision, not as two notes joined together.",
+    `Reply by calling memory_answer with answers: "${proposalId}", kind, headline, and claim holding the merged note only: no preamble, no heading, no quotes, no explanation. For a decision, also pass rejected.`,
+    "",
+    "The only other reply is keep_both, and it is allowed only with a one-line reason that names the fact in the existing note that your note is not about. A reason that does not name such a fact is not accepted.",
+    `Reply by calling memory_answer with answers: "${proposalId}" and keep_both set to that one line, and nothing else.`,
+  ].join("\n");
 
 const DEFECT_REQUIRED = ["where", "trigger", "left_because"] as const;
 
@@ -88,6 +124,34 @@ const proposalProblem = (input: ProposeInput): string | null => {
   return missing.length === 0
     ? null
     : `A defect needs ${missing.map((field) => `\`${field}\``).join(", ")}.`;
+};
+
+interface AnswerInput {
+  readonly keep_both?: string | undefined;
+  readonly kind?: "fact" | "decision" | undefined;
+  readonly headline?: string | undefined;
+  readonly claim?: string | undefined;
+  readonly rejected?: string | undefined;
+}
+
+const answerBody = (input: AnswerInput): MemoryAnswerBody | string => {
+  const { keep_both, kind, headline, claim, rejected } = input;
+  const noteGiven = [kind, headline, claim, rejected].some((value) => value !== undefined);
+  if (keep_both !== undefined)
+    return noteGiven
+      ? "Pass either `keep_both` or a merged note (`kind`, `headline`, `claim`), not both."
+      : { action: "keep_both", reason: keep_both };
+  if (kind === undefined || headline === undefined || claim === undefined)
+    return "Pass `keep_both` with a reason, or a merged note with `kind`, `headline` and `claim`.";
+  if (kind === "decision" && rejected === undefined)
+    return "A decision needs `rejected`: the alternative that was ruled out.";
+
+  return {
+    action: "fold",
+    kind,
+    headline,
+    fields: { claim, ...(rejected === undefined ? {} : { rejected }) },
+  };
 };
 
 const projectScope = Effect.fn("MemoryToolkit.projectScope")(function* (projectId: ProjectId) {
@@ -165,6 +229,20 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
         proposalId: proposal.id,
         status: proposal.status,
         recordId: proposal.resolution?.recordId ?? null,
+        ask:
+          proposal.status === "asked" && proposal.ask
+            ? {
+                proposalId: proposal.id,
+                existing: {
+                  id: proposal.ask.existing.id,
+                  kind: proposal.ask.existing.kind,
+                  headline: proposal.ask.existing.headline,
+                  claim: proposal.ask.existing.fields.claim,
+                  rejected: proposal.ask.existing.fields.rejected ?? null,
+                },
+                instruction: askInstruction(proposal.id, proposal.ask.existing, input),
+              }
+            : null,
         flags: flagLabels(proposal.flags),
         neighbours: proposal.neighbours.map(({ id, source, headline, similarity, relation }) => ({
           id,
@@ -173,6 +251,23 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
           similarity,
           relation: relation?.pick ?? null,
         })),
+      };
+    }),
+  ),
+  memory_answer: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const body = answerBody(input);
+      if (typeof body === "string") return yield* invalid(body);
+
+      const client = yield* MemoryClient;
+      const proposal = yield* client
+        .answer(input.answers, body)
+        .pipe(Effect.mapError(memoryFailure));
+
+      return {
+        proposalId: proposal.id,
+        status: proposal.status,
+        recordId: proposal.resolution?.recordId ?? null,
       };
     }),
   ),

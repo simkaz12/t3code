@@ -253,7 +253,7 @@ it.effect("recall sends audience and decodes a defect result without why", () =>
               kind: "defect",
               headline: "Cart drops the coupon",
               fields: { claim: "The total ignores the coupon." },
-              scope: "oktra",
+              scope: "acme",
               purpose: null,
               topic: null,
               audience: null,
@@ -275,7 +275,7 @@ it.effect("recall sends audience and decodes a defect result without why", () =>
       }));
 
       const results = yield* withClient(stub.url, (client) =>
-        client.recall({ q: "coupon", scope: "oktra", kind: "defect", audience: "navigator" }),
+        client.recall({ q: "coupon", scope: "acme", kind: "defect", audience: "navigator" }),
       );
 
       const query = new URL(stub.requests[0]?.url ?? "", "http://stub").searchParams;
@@ -301,7 +301,7 @@ it.effect("decodes a legacy record that still carries why", () =>
               kind: "fact",
               headline: "Old note",
               fields: { claim: "claim", why: "an old reason", rejected: null },
-              scope: "oktra",
+              scope: "acme",
               purpose: null,
               topic: null,
               score: 0.5,
@@ -313,6 +313,77 @@ it.effect("decodes a legacy record that still carries why", () =>
       const results = yield* withClient(stub.url, (client) => client.recall({ q: "old" }));
 
       assert.equal(results[0]?.fields.why, "an old reason");
+    }),
+  ),
+);
+
+it.effect("answer posts to the proposal and decodes a folded ask row", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer(() => ({
+        status: 200,
+        body: {
+          id: "proposal-3",
+          status: "folded",
+          kind: "fact",
+          headline: "The acme report sync runs nightly",
+          fields: { claim: "The acme report sync runs nightly." },
+          scope: "acme",
+          provenance: {
+            threadId: "thread:memory",
+            threadTitle: "Sync",
+            projectId: "project:acme",
+            branch: null,
+            machine: "laptop",
+            link: "t3-thread://x",
+            excerpt: "",
+          },
+          origin: "agent",
+          target: null,
+          purpose: null,
+          topic: null,
+          checks: { status: "ok" },
+          flags: [],
+          neighbours: [],
+          suggestion: null,
+          ask: {
+            existing: {
+              id: "rec-9",
+              source: "v2",
+              kind: "fact",
+              headline: "The acme report sync runs nightly",
+              fields: { claim: "The acme report sync runs nightly." },
+            },
+            similarity: 0.9,
+            sameSubject: 0.8,
+            newCoversOld: 0.5,
+            existingIsFold: false,
+            askedAt: "2026-11-13T10:00:00.000Z",
+            expiresAt: "2026-11-13T10:10:00.000Z",
+            answer: "fold",
+            answeredAt: "2026-11-13T10:01:00.000Z",
+            reason: null,
+            foldRecordId: "rec-10",
+            foldCoversOld: 0.95,
+            foldCoversNew: 0.9,
+          },
+          createdAt: "2026-11-13T10:00:00.000Z",
+          resolvedAt: "2026-11-13T10:01:00.000Z",
+          resolution: { recordId: "rec-10" },
+        },
+      }));
+
+      const proposal = yield* withClient(stub.url, (client) =>
+        client.answer("proposal 3", { action: "keep_both", reason: "A different fact." }),
+      );
+
+      assert.equal(stub.requests[0]?.url, "/v2/proposals/proposal%203/answer");
+      assert.deepEqual(stub.requests[0]?.body, {
+        action: "keep_both",
+        reason: "A different fact.",
+      });
+      assert.equal(proposal.status, "folded");
+      assert.equal(proposal.ask?.foldRecordId, "rec-10");
     }),
   ),
 );

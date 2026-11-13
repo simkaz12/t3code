@@ -25,7 +25,7 @@ const proposal = (id: string, overrides: Partial<MemoryProposal> = {}): MemoryPr
   kind: "fact",
   headline: `headline ${id}`,
   fields: { claim: "claim", why: "", rejected: null },
-  scope: "oktra",
+  scope: "acme",
   provenance: {
     threadId: "thread-1",
     threadTitle: "Fix tinker",
@@ -50,6 +50,7 @@ const proposal = (id: string, overrides: Partial<MemoryProposal> = {}): MemoryPr
 
 const fakeClient = (overrides: Partial<MemoryClientShape>): MemoryClientShape => ({
   propose: () => Effect.die("not used"),
+  answer: () => Effect.die("not used"),
   recall: () => Effect.die("not used"),
   get: () => Effect.die("not used"),
   pending: () => Effect.succeed([]),
@@ -130,12 +131,12 @@ it.effect("flattens a proposal into a tile with its labels, flags and lowest con
     const tile = MemoryProposalPoller.toTile(
       proposal("p1", {
         purpose: "pitfall",
-        topic: "oktra-be test harness",
+        topic: "acme-api test harness",
         flags: ["kind_differs", "restatement:r1"],
         checks: {
           status: "ok",
           answers: {
-            topic: { choice: "oktra-be test harness", confidence: 0.9, probabilities: {} },
+            topic: { choice: "acme-api test harness", confidence: 0.9, probabilities: {} },
             purpose: { choice: "pitfall", confidence: 0.4, probabilities: {} },
             headline_faithful: { noul: 0.8 },
           },
@@ -161,7 +162,7 @@ it.effect("flattens a proposal into a tile with its labels, flags and lowest con
 
     assert.deepInclude(tile, {
       id: "p1",
-      topic: "oktra-be test harness",
+      topic: "acme-api test harness",
       purpose: "pitfall",
       confidence: 0.4,
       flags: ["kind differs from declared", "restates an existing record"],
@@ -300,7 +301,7 @@ it.effect("sends an approval with its edits and drops the tile", () =>
 
         yield* poller.approve({
           proposalId: "p1",
-          edits: { headline: "Edited", scope: "oktra-be" },
+          edits: { headline: "Edited", scope: "acme-api" },
           supersedes: ["r1"],
           reason: "changed",
         });
@@ -308,7 +309,7 @@ it.effect("sends an approval with its edits and drops the tile", () =>
         assert.deepEqual(yield* Queue.take(approvals), {
           id: "p1",
           body: {
-            edits: { headline: "Edited", scope: "oktra-be" },
+            edits: { headline: "Edited", scope: "acme-api" },
             supersedes: ["r1"],
             reason: "changed",
           },

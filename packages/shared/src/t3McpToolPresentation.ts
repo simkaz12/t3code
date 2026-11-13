@@ -364,6 +364,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   html_preview: tool(["Preview", "Previewing", "Previewed", "an HTML page"], "html-preview"),
   html_render: tool(["Render", "Rendering", "Rendered", "an HTML page"], "html-render"),
   memory_propose: tool(["Propose", "Proposing", "Proposed", "a memory"], "memory-propose"),
+  memory_answer: tool(["Answer", "Answering", "Answered", "a held memory"], "memory-propose"),
   memory_recall: tool(["Search", "Searching", "Searched", "memory"], "memory-recall"),
   memory_get: tool(["Read", "Reading", "Read", "a memory"], "memory-get"),
   memory_take: tool(["Take", "Taking", "Took", "a defect"], "memory-take"),
