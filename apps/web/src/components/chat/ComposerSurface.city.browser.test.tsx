@@ -78,7 +78,7 @@ const SUBAGENTS: ComposerBannerStackItem = {
   variant: "default",
   icon: <span className="size-1.5 rounded-full bg-current" />,
   title: "Waiting on 2 subagents",
-  description: "Map pi-jira MCP server, Map verify-ticket and last oktra QA",
+  description: "Map pi-jira MCP server, Map verify-ticket and last acme QA",
   actions: (
     <Button size="xs" variant="ghost">
       Stop
