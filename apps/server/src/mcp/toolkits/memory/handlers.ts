@@ -70,22 +70,30 @@ interface ProposeInput {
 const noteText = (headline: string, claim: string, rejected: string | null | undefined) =>
   [headline, claim, ...(rejected ? [`Rejected: ${rejected}`] : [])].join("\n");
 
+const WHY_RULE =
+  "The merged note has no why field. Carry the concrete details from the existing note's why (commands, paths, numbers, config keys, conditions) into the claim, and leave out the account of how it was found, such as incident dates and lost round trips.";
+
 const askInstruction = (
   proposalId: string,
   existing: MemoryAsk["existing"],
   incoming: Pick<ProposeInput, "headline" | "claim" | "rejected">,
-): string =>
-  [
+): string => {
+  const why = existing.fields.why?.trim() ?? "";
+  const hasWhy = why !== "";
+
+  return [
     "Your note was not saved yet. The store says it looks like the same thing as a note it already holds.",
     "",
     "EXISTING NOTE (already in the store):",
     noteText(existing.headline, existing.fields.claim, existing.fields.rejected),
+    ...(hasWhy ? [`Why it was saved: ${why}`] : []),
     "",
     "YOUR NOTE (the one you just sent):",
     noteText(incoming.headline, incoming.claim, incoming.rejected),
     "",
     "Send back the one merged note that holds everything from both. It replaces both in the store.",
     "Keep every concrete detail from both notes: names, numbers, paths, config keys, dates, rejected options and the reasons they were rejected.",
+    ...(hasWhy ? [WHY_RULE] : []),
     "Add nothing that is in neither note. No new advice, no inference, no framing of your own.",
     "Where the notes conflict, your note is the newer one and wins. Give the newer value and say that the older value was replaced.",
     "Write it as one fact or one decision, not as two notes joined together.",
@@ -94,6 +102,7 @@ const askInstruction = (
     "The only other reply is keep_both, and it is allowed only with a one-line reason that names the fact in the existing note that your note is not about. A reason that does not name such a fact is not accepted.",
     `Reply by calling memory_answer with answers: "${proposalId}" and keep_both set to that one line, and nothing else.`,
   ].join("\n");
+};
 
 const DEFECT_REQUIRED = ["where", "trigger", "left_because"] as const;
 

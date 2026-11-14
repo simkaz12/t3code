@@ -32,7 +32,6 @@ import {
   OrchestrationV2Command,
   type OrchestrationV2InternalCommand,
   type OrchestrationV2LimitRecoveryUpdate,
-  type OrchestrationV2ThreadHarvest,
   type OrchestrationV2ServerCommand,
   type ThreadPullRequestLink,
   type ThreadPullRequestWatch,
@@ -344,16 +343,6 @@ export interface OrchestratorV2Shape {
     readonly commandId: CommandId;
     readonly threadId: ThreadId;
     readonly limitRecovery: OrchestrationV2LimitRecoveryUpdate;
-  }) => Effect.Effect<void, OrchestratorV2Error>;
-  readonly setHarvestCheckpoint: (input: {
-    readonly commandId: CommandId;
-    readonly threadId: ThreadId;
-    readonly harvest: OrchestrationV2ThreadHarvest | null;
-  }) => Effect.Effect<void, OrchestratorV2Error>;
-  readonly setHarvestPendingRun: (input: {
-    readonly commandId: CommandId;
-    readonly threadId: ThreadId;
-    readonly harvestPendingRunId: string | null;
   }) => Effect.Effect<void, OrchestratorV2Error>;
   readonly searchThreadStream: (
     input: OrchestrationV2SearchThreadInput,
@@ -13883,18 +13872,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : command,
           );
         }),
-      );
-    }),
-    setHarvestCheckpoint: Effect.fn("OrchestratorV2.setHarvestCheckpoint")(function (input) {
-      return threadDispatch.withLock(
-        input.threadId,
-        dispatchWithReceiptEffect({ type: "thread.metadata.update", ...input }),
-      );
-    }),
-    setHarvestPendingRun: Effect.fn("OrchestratorV2.setHarvestPendingRun")(function (input) {
-      return threadDispatch.withLock(
-        input.threadId,
-        dispatchWithReceiptEffect({ type: "thread.metadata.update", ...input }),
       );
     }),
     searchThreadStream: (input) =>

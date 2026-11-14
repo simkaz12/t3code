@@ -223,7 +223,7 @@ export function HostedBrowserWebview(props: {
     const wrapper = wrapperRef.current;
     const previous = handoffRef.current;
     if (!active || !lastRect) {
-      if (previous) previous.inactiveSince ??= performance.now();
+      if (previous && previous.inactiveSince === null) previous.inactiveSince = performance.now();
       wrapper?.getAnimations().forEach((animation) => animation.cancel());
       return;
     }

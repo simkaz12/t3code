@@ -147,7 +147,7 @@ export function MemorySettings() {
         serverScoped
         settingKeys={["memoryServerUrl"]}
         {...searchableSetting("memory-server-url")}
-        description="Base URL of the memory server that agents propose to and search, such as http://10.8.0.1:8789/v2. Empty turns memory off for this environment."
+        description="Base URL of the memory server that agents propose to and search, such as http://localhost:8789/v2. Empty turns memory off for this environment."
         resetAction={
           mixedServerUrl || settings.memoryServerUrl !== "" ? (
             <SettingResetButton
@@ -162,7 +162,7 @@ export function MemorySettings() {
             key={`${scopeKey}:${mixedServerUrl}:${settings.memoryServerUrl}`}
             aria-label="Memory server URL"
             defaultValue={mixedServerUrl ? "" : settings.memoryServerUrl}
-            placeholder={mixedServerUrl ? "Mixed" : "http://10.8.0.1:8789/v2"}
+            placeholder={mixedServerUrl ? "Mixed" : "http://localhost:8789/v2"}
             onChange={() => {
               serverUrlEdited.current = true;
             }}

@@ -516,6 +516,63 @@ it.effect("hands an asked proposal back with the existing record and the instruc
   ),
 );
 
+const askedWithWhy = {
+  ...askedResponse,
+  ask: {
+    ...askedResponse.ask,
+    existing: {
+      ...askedResponse.ask.existing,
+      fields: {
+        ...askedResponse.ask.existing.fields,
+        why: "Lost three round trips on 2026-11-02. Confirm the copy with diff -rq a b.",
+      },
+    },
+  },
+};
+
+const proposeAsked = (response: typeof askedResponse) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServerWith(response);
+
+      const result = yield* callTool({
+        memoryServerUrl: stub.url,
+        memoryScope: "acme",
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_propose", {
+              kind: "decision",
+              headline: "The acme report sync is nightly, hourly was rejected",
+              claim: "The acme report sync stays nightly.",
+              rejected: "Hourly runs, because they hit the API rate limit.",
+            })
+            .pipe(Stream.unwrap, collect),
+      });
+
+      return (result as { ask: { instruction: string } }).ask.instruction;
+    }),
+  );
+
+it.effect("shows the existing why and the carry-over rule in the ask instruction", () =>
+  Effect.gen(function* () {
+    const withWhy = yield* proposeAsked(askedWithWhy as typeof askedResponse);
+    const without = yield* proposeAsked(askedResponse);
+
+    expect(withWhy).toContain(
+      "Why it was saved: Lost three round trips on 2026-11-02. Confirm the copy with diff -rq a b.",
+    );
+    expect(withWhy).toContain("The merged note has no why field.");
+    expect(without).not.toContain("Why it was saved");
+    expect(without).not.toContain("no why field");
+    expect(
+      withWhy
+        .split("\n")
+        .filter((line) => !line.startsWith("Why it was saved:") && !line.includes("no why field"))
+        .join("\n"),
+    ).toBe(without);
+  }),
+);
+
 it.effect("sends a merged note as a fold answer and reports the fold record", () =>
   Effect.scoped(
     Effect.gen(function* () {
