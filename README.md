@@ -1,3 +1,23 @@
+# T3 Code - personal fork
+
+My working fork of [T3 Code](https://github.com/pingdotgg/t3code), with persistent agent memory and changes to the development interface.
+
+## What I've added
+
+- **Tabularium integration:** memory tools backed by Tabularium v2, with a memory tray in the interface.
+- **Artifact modal:** an interface for viewing generated artifacts.
+- **Terminal split and browser enlargement:** changes to how those views use the workspace.
+
+## Related projects
+
+[Tabularium](https://github.com/simkaz12/tabularium) implements the memory system. [Skillbook](https://github.com/simkaz12/skillbook) contains my agent instructions and workflows.
+
+This is a personal fork. The upstream documentation follows below; upstream release downloads do not include these additions. To build this fork, start with the [development runbook](./docs/operations/development.md).
+
+---
+
+## Upstream documentation
+
 # T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
@@ -150,3 +170,4 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR
 Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
 
 Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+
