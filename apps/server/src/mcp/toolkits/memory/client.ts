@@ -90,6 +90,7 @@ export interface MemoryProposeBody {
   readonly origin: MemoryOrigin;
   readonly target?: typeof MemoryProposalTarget.Type;
   readonly audience?: MemoryAudience;
+  readonly supersedes?: ReadonlyArray<string>;
 }
 
 export const MemoryTakenBy = Schema.Struct({

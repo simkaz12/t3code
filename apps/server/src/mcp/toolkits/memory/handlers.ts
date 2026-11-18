@@ -65,6 +65,7 @@ interface ProposeInput {
   readonly fix_hint?: string | undefined;
   readonly impact?: string | undefined;
   readonly closes?: string | undefined;
+  readonly supersedes?: ReadonlyArray<string> | undefined;
 }
 
 const noteText = (headline: string, claim: string, rejected: string | null | undefined) =>
@@ -124,6 +125,8 @@ const proposalFields = (input: ProposeInput): MemoryProposeBody["fields"] => {
 };
 
 const proposalProblem = (input: ProposeInput): string | null => {
+  if (input.closes !== undefined && input.supersedes !== undefined)
+    return "Pass `closes` or `supersedes`, not both: closing a defect and replacing notes are separate proposals.";
   if (input.closes !== undefined) return null;
   if (input.kind === "decision" && input.rejected === undefined)
     return "A decision needs `rejected`: the alternative that was ruled out.";
@@ -228,6 +231,7 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
           },
           origin: "agent",
           ...(input.audience === undefined ? {} : { audience: input.audience }),
+          ...(input.supersedes === undefined ? {} : { supersedes: input.supersedes }),
           ...(input.closes === undefined
             ? {}
             : { target: { recordId: input.closes, source: "v2", action: "close" } }),
