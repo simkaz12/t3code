@@ -836,6 +836,59 @@ it.effect("sends a close target for the defect when a proposal carries closes", 
   ),
 );
 
+it.effect("sends supersedes in the propose body", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+
+      yield* callTool({
+        memoryServerUrl: stub.url,
+        memoryScope: "acme",
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_propose", { ...proposeInput, supersedes: ["rec-1", "rec-2"] })
+            .pipe(Stream.unwrap, collect),
+      });
+
+      expect(stub.requests[0]?.body).toMatchObject({ supersedes: ["rec-1", "rec-2"] });
+    }),
+  ),
+);
+
+it.effect("refuses closes together with supersedes before calling the server", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+
+      const result = yield* callTool({
+        memoryServerUrl: stub.url,
+        call: (toolkit) =>
+          toolkit
+            .handle("memory_propose", {
+              ...proposeInput,
+              closes: "defect-1",
+              supersedes: ["rec-1"],
+            })
+            .pipe(Stream.unwrap, collect),
+      });
+
+      expect(result).toMatchObject({ code: "invalid_request" });
+      expect(stub.requests).toEqual([]);
+    }),
+  ),
+);
+
+it("advertises supersedes with its description", () => {
+  expect(advertisedJsonSchema(MemoryToolkit.tools.memory_propose)).toMatchObject({
+    properties: {
+      supersedes: {
+        description:
+          "Ids of notes this one replaces, from `neighbours` or recall. They are retired when this note saves, same scope only. Restate anything from them that still holds, since each is replaced whole. Close defects with `closes`, not here.",
+      },
+    },
+  });
+});
+
 it.effect("tells the agent when no memory server is configured", () =>
   Effect.gen(function* () {
     const result = yield* callTool({

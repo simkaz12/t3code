@@ -33,7 +33,7 @@ const shared = {
 const MemoryProposeTool = Tool.make("memory_propose", {
   ...shared,
   description:
-    "Propose a memory. The server saves it at once and returns `recordId`; the cleaner reviews it later. `status` is `approved` for a new record, or `reinforced` when the server counted your proposal against an existing record and wrote nothing new, and then `recordId` is that record. Status `asked` means the note is held, not saved: `ask` carries the existing record and the reply to give, and you answer with `memory_answer` in the same turn. `kind`: fact, decision (needs `rejected`) or defect (needs `where`, `trigger`, `left_because`; `claim` is the symptom). `headline` is the claim in one sentence. No ticket ids, dates or file:line in `claim`. `closes` closes that defect at once. `flags` and `neighbours` show what the checks found and which saved records are close.",
+    "Propose a memory. The server saves it at once and returns `recordId`; the cleaner reviews it later. `status` is `approved` for a new record, or `reinforced` when the server counted your proposal against an existing record and wrote nothing new, and then `recordId` is that record. Status `asked` means the note is held, not saved: `ask` carries the existing record and the reply to give, and you answer with `memory_answer` in the same turn. `kind`: fact, decision (needs `rejected`) or defect (needs `where`, `trigger`, `left_because`; `claim` is the symptom). `headline` is the claim in one sentence. No ticket ids, dates or file:line in `claim`. `closes` closes that defect at once. `supersedes` retires the notes this one replaces. `flags` and `neighbours` show what the checks found and which saved records are close.",
   parameters: Schema.Struct({
     kind: MemoryKind,
     headline: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
@@ -47,6 +47,16 @@ const MemoryProposeTool = Tool.make("memory_propose", {
     audience: Schema.optional(MemoryAudience),
     stage: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(40))),
     closes: Schema.optional(TrimmedNonEmptyString),
+    supersedes: Schema.optional(
+      Schema.Array(TrimmedNonEmptyString)
+        .check(Schema.isMinLength(1), Schema.isMaxLength(5))
+        .pipe(
+          Schema.annotateEncoded({
+            description:
+              "Ids of notes this one replaces, from `neighbours` or recall. They are retired when this note saves, same scope only. Restate anything from them that still holds, since each is replaced whole. Close defects with `closes`, not here.",
+          }),
+        ),
+    ),
   }),
   success: Schema.Struct({
     proposalId: Schema.String,
