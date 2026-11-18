@@ -110,9 +110,15 @@ const MemoryAnswerTool = Tool.make("memory_answer", {
 const MemoryRecallTool = Tool.make("memory_recall", {
   ...shared,
   description:
-    "Search saved memory: approved records and the legacy archive. Defaults to this project's scope; `scope` searches another, `kind` filters, `audience` keeps records written for that role or for everyone. Each result names its `source` (v2 or legacy).",
+    "Search saved memory for live rules, decisions and open defects that bear on your work. `task` says what you are working on, so search and scoring follow your work, not just the query words. The strongest results carry headline and claim; the rest carry the headline only, which states the rule. `memory_get` returns a record's why and rejected. Leave `limit` unset unless you need a wide sweep. Defaults to this project's scope; `scope` searches another, `kind` filters, `audience` keeps records written for that role or for everyone.",
   parameters: Schema.Struct({
     query: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
+    task: TrimmedNonEmptyString.pipe(
+      Schema.annotateEncoded({
+        description:
+          "Your current work: `<area>: <what you are doing>`, e.g. `recall noise: setting the drop floor for weak rows`. Put the area first. Up to about 300 characters; longer is cut. Never paste a spec or a prompt.",
+      }),
+    ),
     scope: Schema.optional(TrimmedNonEmptyString),
     kind: Schema.optional(MemoryKind),
     audience: Schema.optional(MemoryAudience),

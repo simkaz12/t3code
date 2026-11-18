@@ -290,6 +290,7 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
       const results = yield* client
         .recall({
           q: input.query,
+          task: input.task,
           scope,
           kind: input.kind,
           audience: input.audience,

@@ -5,10 +5,13 @@ import { assert, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { FetchHttpClient } from "effect/http";
 
 import * as Settings from "../../../serverSettings.ts";
 import * as MemoryClient from "./client.ts";
+
+const encodeRecallRows = Schema.encodeUnknownEffect(Schema.Array(MemoryClient.MemoryRecallResult));
 
 interface Recorded {
   readonly method: string;
@@ -240,7 +243,7 @@ it.effect("take surfaces a 409 from a closed defect as a rejected error", () =>
   ),
 );
 
-it.effect("recall sends audience and decodes a defect result without why", () =>
+it.effect("recall sends task and audience and keeps defect metadata", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const stub = yield* stubServer(() => ({
@@ -252,11 +255,7 @@ it.effect("recall sends audience and decodes a defect result without why", () =>
               source: "v2",
               kind: "defect",
               headline: "Cart drops the coupon",
-              fields: { claim: "The total ignores the coupon." },
               scope: "acme",
-              purpose: null,
-              topic: null,
-              audience: null,
               reader: "trap",
               stage: "recon",
               where: "app/Cart/TotalCalculator.php",
@@ -275,15 +274,91 @@ it.effect("recall sends audience and decodes a defect result without why", () =>
       }));
 
       const results = yield* withClient(stub.url, (client) =>
-        client.recall({ q: "coupon", scope: "acme", kind: "defect", audience: "navigator" }),
+        client.recall({
+          q: "coupon",
+          task: "cart: fixing the coupon total",
+          scope: "acme",
+          kind: "defect",
+          audience: "navigator",
+        }),
       );
 
       const query = new URL(stub.requests[0]?.url ?? "", "http://stub").searchParams;
+      assert.equal(query.get("task"), "cart: fixing the coupon total");
       assert.equal(query.get("audience"), "navigator");
       assert.equal(query.get("kind"), "defect");
-      assert.equal(results[0]?.fields.why, "");
-      assert.equal(results[0]?.fields.rejected, null);
+      assert.equal(results[0]?.fields, undefined);
+      assert.equal(results[0]?.defectStatus, "taken");
       assert.equal(results[0]?.takenBy?.threadId, "thread-1");
+    }),
+  ),
+);
+
+it.effect("decodes today's full rows and trimmed rows, re-encoding only what v2 sent", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const todaysRow = {
+        id: "rec-1",
+        source: "v2",
+        kind: "fact",
+        headline: "Old full row",
+        fields: { claim: "the claim", why: "an old reason", rejected: "the other way" },
+        scope: "acme",
+        purpose: "pitfall",
+        topic: "recall",
+        audience: null,
+        reader: null,
+        stage: null,
+        where: null,
+        trigger: null,
+        leftBecause: null,
+        defectStatus: null,
+        takenBy: null,
+        score: 1.4,
+      };
+      const claimRow = {
+        id: "rec-2",
+        source: "v2",
+        kind: "decision",
+        headline: "Claim row",
+        fields: { claim: "the claim" },
+        scope: "acme",
+        score: 1.1,
+      } as const;
+      const headlineRow = {
+        id: "rec-3",
+        source: "legacy",
+        kind: "fact",
+        headline: "Headline only",
+        scope: "acme",
+        score: 0.7,
+      } as const;
+      const stub = yield* stubServer(() => ({
+        status: 200,
+        body: { results: [todaysRow, claimRow, headlineRow] },
+      }));
+
+      const results = yield* withClient(stub.url, (client) =>
+        client.recall({ q: "old", task: "recall: reading rows" }),
+      );
+      const encoded = yield* encodeRecallRows(results);
+
+      assert.deepEqual(encoded, [
+        {
+          id: "rec-1",
+          source: "v2",
+          kind: "fact",
+          headline: "Old full row",
+          fields: { claim: "the claim" },
+          scope: "acme",
+          purpose: "pitfall",
+          topic: "recall",
+          score: 1.4,
+        },
+        claimRow,
+        headlineRow,
+      ]);
+      assert.notMatch(JSON.stringify(encoded), /why|rejected|null/);
     }),
   ),
 );
@@ -310,9 +385,12 @@ it.effect("decodes a legacy record that still carries why", () =>
         },
       }));
 
-      const results = yield* withClient(stub.url, (client) => client.recall({ q: "old" }));
+      const results = yield* withClient(stub.url, (client) =>
+        client.recall({ q: "old", task: "notes: reading old rows" }),
+      );
 
-      assert.equal(results[0]?.fields.why, "an old reason");
+      assert.equal(results[0]?.fields?.claim, "claim");
+      assert.equal(JSON.stringify(results[0]).includes("an old reason"), false);
     }),
   ),
 );

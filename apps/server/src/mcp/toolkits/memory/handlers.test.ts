@@ -15,7 +15,9 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/http";
 
@@ -23,6 +25,7 @@ import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as Settings from "../../../serverSettings.ts";
+import { advertisedJsonSchema } from "../../advertisedJsonSchema.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { idleThreadProjection, liveThreadShell } from "../../McpToolAccess.testkit.ts";
@@ -858,6 +861,7 @@ it.effect("recalls in the project scope and reads one record", () =>
           toolkit
             .handle("memory_recall", {
               query: "tinker psysh",
+              task: "tinker: recalling psysh notes",
               kind: "fact",
               audience: "builder",
               limit: 5,
@@ -873,6 +877,7 @@ it.effect("recalls in the project scope and reads one record", () =>
       const query = new URL(stub.requests[0]?.url ?? "", "http://stub").searchParams;
       expect(Object.fromEntries(query)).toEqual({
         q: "tinker psysh",
+        task: "tinker: recalling psysh notes",
         scope: "acme",
         kind: "fact",
         audience: "builder",
@@ -880,6 +885,20 @@ it.effect("recalls in the project scope and reads one record", () =>
       });
       expect(recalled).toMatchObject({
         results: [{ id: "rec-1", source: "legacy", audience: "builder", reader: "lookup" }],
+      });
+      const decodeRecall = Schema.decodeUnknownExit(
+        MemoryToolkit.tools.memory_recall.parametersSchema,
+      );
+      expect(Exit.isFailure(decodeRecall({ query: "tinker psysh" }))).toBe(true);
+      expect(Exit.isFailure(decodeRecall({ query: "tinker psysh", task: "  " }))).toBe(true);
+      expect(advertisedJsonSchema(MemoryToolkit.tools.memory_recall)).toMatchObject({
+        required: expect.arrayContaining(["task"]),
+        properties: {
+          task: {
+            description:
+              "Your current work: `<area>: <what you are doing>`, e.g. `recall noise: setting the drop floor for weak rows`. Put the area first. Up to about 300 characters; longer is cut. Never paste a spec or a prompt.",
+          },
+        },
       });
       expect(read).toMatchObject({ id: "rec-1", collapsedIds: ["old-1", "old-2"] });
       expect(stub.requests[1]?.url).toBe("/v2/records/rec-1");

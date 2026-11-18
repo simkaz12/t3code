@@ -192,23 +192,33 @@ export const MemoryProposal = Schema.Struct({
 });
 export type MemoryProposal = typeof MemoryProposal.Type;
 
+const absentWhenNull = <S extends Schema.Top>(schema: S) =>
+  Schema.optional(Schema.NullOr(schema)).pipe(
+    Schema.decodeTo(Schema.optional(schema), {
+      decode: SchemaGetter.transformOptional((value) =>
+        Option.flatMap(value, Option.fromNullishOr),
+      ),
+      encode: SchemaGetter.passthrough(),
+    }),
+  );
+
 export const MemoryRecallResult = Schema.Struct({
   id: Schema.String,
   source: MemorySource,
   kind: MemoryKind,
   headline: Schema.String,
-  fields: MemoryRecordFields,
+  fields: Schema.optional(Schema.Struct({ claim: Schema.optional(Schema.String) })),
   scope: Schema.String,
-  purpose: Schema.NullOr(Schema.String),
-  topic: Schema.NullOr(Schema.String),
-  audience: optionalText,
-  reader: optionalText,
-  stage: optionalText,
-  where: optionalText,
-  trigger: optionalText,
-  leftBecause: optionalText,
-  defectStatus: Schema.optional(Schema.NullOr(MemoryDefectStatus)),
-  takenBy: Schema.optional(Schema.NullOr(MemoryTakenBy)),
+  purpose: absentWhenNull(Schema.String),
+  topic: absentWhenNull(Schema.String),
+  audience: absentWhenNull(Schema.String),
+  reader: absentWhenNull(Schema.String),
+  stage: absentWhenNull(Schema.String),
+  where: absentWhenNull(Schema.String),
+  trigger: absentWhenNull(Schema.String),
+  leftBecause: absentWhenNull(Schema.String),
+  defectStatus: absentWhenNull(MemoryDefectStatus),
+  takenBy: absentWhenNull(MemoryTakenBy),
   score: Schema.Number,
 });
 export type MemoryRecallResult = typeof MemoryRecallResult.Type;
@@ -258,6 +268,7 @@ export interface MemoryRecallQuery {
   readonly kind?: MemoryKind | undefined;
   readonly audience?: MemoryAudience | undefined;
   readonly limit?: number | undefined;
+  readonly task: string;
 }
 
 export class MemoryClientError extends Schema.TaggedError<MemoryClientError>()(
@@ -509,6 +520,7 @@ const makeMemoryClient = (
         send("GET", "/recall", {
           query: {
             q: query.q,
+            task: query.task,
             scope: query.scope,
             kind: query.kind,
             audience: query.audience,
