@@ -295,6 +295,7 @@ const callTool = Effect.fn("memoryTest.call")(function* <A, E, R>(options: {
   readonly memoryScope?: string;
   readonly workspaceRoot?: string;
   readonly messages?: ReadonlyArray<OrchestrationV2ConversationMessage>;
+  readonly caller?: "bound" | "unbound" | "deleted";
   readonly call: (toolkit: Effect.Success<typeof MemoryToolkit>) => Effect.Effect<A, E, R>;
 }) {
   const shell = { ...liveThreadShell(threadId), title: "Fix tinker", branch: "feature/tinker" };
@@ -311,17 +312,20 @@ const callTool = Effect.fn("memoryTest.call")(function* <A, E, R>(options: {
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId,
       requestNamespace: "provider:memory",
-      thread: {
-        threadId,
-        providerSessionId: "provider:memory",
-        providerInstanceId: ProviderInstanceId.make("codex"),
-      },
+      thread:
+        options.caller === "unbound"
+          ? undefined
+          : {
+              threadId,
+              providerSessionId: "provider:memory",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+            },
       client: undefined,
       capabilities: new Set(["orchestration" as const]),
       issuedAt: 0,
     }),
     Layer.mock(ThreadManagement.ThreadManagementService)({
-      getThreadShell: () => Effect.succeed(shell),
+      getThreadShell: () => Effect.succeed(options.caller === "deleted" ? null : shell),
       getProjectThreadRecords: () =>
         Effect.succeed({
           ...idleThreadProjection(shell),
@@ -935,6 +939,7 @@ it.effect("recalls in the project scope and reads one record", () =>
         kind: "fact",
         audience: "builder",
         limit: "5",
+        threadId,
       });
       expect(recalled).toMatchObject({
         results: [{ id: "rec-1", source: "legacy", audience: "builder", reader: "lookup" }],
@@ -954,7 +959,9 @@ it.effect("recalls in the project scope and reads one record", () =>
         },
       });
       expect(read).toMatchObject({ id: "rec-1", collapsedIds: ["old-1", "old-2"] });
-      expect(stub.requests[1]?.url).toBe("/v2/records/rec-1");
+      expect(stub.requests[1]?.url).toBe(
+        `/v2/records/rec-1?threadId=${encodeURIComponent(threadId)}`,
+      );
     }),
   ),
 );
@@ -990,8 +997,32 @@ it.effect("takes a defect for the calling thread and releases it with no body", 
       expect(stub.requests[1]).toMatchObject({
         method: "POST",
         url: "/v2/records/defect-1/release",
+        body: { threadId },
       });
       expect(released).toEqual({ recordId: "defect-1", defectStatus: "open", takenBy: null });
+    }),
+  ),
+);
+
+it.effect("get sends no thread id when the thread is unbound or gone", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer;
+
+      for (const caller of ["unbound", "deleted"] as const) {
+        const read = yield* callTool({
+          memoryServerUrl: stub.url,
+          caller,
+          call: (toolkit) =>
+            toolkit.handle("memory_get", { id: "rec-1" }).pipe(Stream.unwrap, collect),
+        });
+        expect(read).toMatchObject({ id: "rec-1" });
+      }
+
+      expect(stub.requests.map((request) => request.url)).toEqual([
+        "/v2/records/rec-1",
+        "/v2/records/rec-1",
+      ]);
     }),
   ),
 );

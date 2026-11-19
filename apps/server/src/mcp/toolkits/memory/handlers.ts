@@ -27,6 +27,12 @@ import { MemoryToolkit } from "./tools.ts";
 const EXCERPT_MESSAGES = 6;
 const EXCERPT_CHARACTERS = 2000;
 
+const callerThreadId = () =>
+  loadCaller().pipe(
+    Effect.map(({ caller }) => caller?.id),
+    Effect.orElseSucceed(() => undefined),
+  );
+
 const bareLink = (link: string) => link.replace(/^<(.*)>$/, "$1");
 
 function repoDirectoryName(workspaceRoot: string): string {
@@ -299,6 +305,7 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
           kind: input.kind,
           audience: input.audience,
           limit: input.limit,
+          threadId: caller?.id,
         })
         .pipe(Effect.mapError(memoryFailure));
 
@@ -322,16 +329,18 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
   ),
   memory_release: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
+      const threadId = yield* callerThreadId();
       const client = yield* MemoryClient;
 
-      return yield* client.release(input.recordId).pipe(Effect.mapError(memoryFailure));
+      return yield* client.release(input.recordId, threadId).pipe(Effect.mapError(memoryFailure));
     }),
   ),
   memory_get: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
+      const threadId = yield* callerThreadId();
       const client = yield* MemoryClient;
 
-      return yield* client.get(input.id).pipe(Effect.mapError(memoryFailure));
+      return yield* client.get(input.id, threadId).pipe(Effect.mapError(memoryFailure));
     }),
   ),
 });
