@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
 
@@ -45,7 +46,7 @@ export function WorkspaceImagePreview(props: {
     return (
       <MediaActions source={actionsSource}>
         <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
-          Unable to load workspace image.
+          <T>Unable to load workspace image.</T>
         </div>
       </MediaActions>
     );
