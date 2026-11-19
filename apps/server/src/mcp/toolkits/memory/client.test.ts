@@ -211,6 +211,36 @@ it.effect("take posts the thread and link to the record and reads the defect sta
   ),
 );
 
+it.effect("recall, get and release send the thread id only when given", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer((request) =>
+        request.url.startsWith("/v2/recall")
+          ? { status: 200, body: { results: [] } }
+          : request.method === "GET"
+            ? { status: 200, body: { id: "rec-1" } }
+            : { status: 200, body: { id: "defect-1", defectStatus: "open", takenBy: null } },
+      );
+
+      yield* withClient(stub.url, (client) =>
+        client.recall({ q: "x", task: "t: y", threadId: "thread-9" }),
+      );
+      yield* withClient(stub.url, (client) => client.recall({ q: "x", task: "t: y" }));
+      yield* withClient(stub.url, (client) => client.get("rec-1", "thread-9"));
+      yield* withClient(stub.url, (client) => client.get("rec-1"));
+      yield* withClient(stub.url, (client) => client.release("defect-1", "thread-9"));
+
+      const params = (index: number) =>
+        new URL(stub.requests[index]?.url ?? "", "http://stub").searchParams;
+      assert.equal(params(0).get("threadId"), "thread-9");
+      assert.equal(params(1).has("threadId"), false);
+      assert.equal(stub.requests[2]?.url, "/v2/records/rec-1?threadId=thread-9");
+      assert.equal(stub.requests[3]?.url, "/v2/records/rec-1");
+      assert.deepEqual(stub.requests[4]?.body, { threadId: "thread-9" });
+    }),
+  ),
+);
+
 it.effect("release posts to the record and returns it to open", () =>
   Effect.scoped(
     Effect.gen(function* () {

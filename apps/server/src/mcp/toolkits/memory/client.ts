@@ -270,6 +270,7 @@ export interface MemoryRecallQuery {
   readonly audience?: MemoryAudience | undefined;
   readonly limit?: number | undefined;
   readonly task: string;
+  readonly threadId?: string | undefined;
 }
 
 export class MemoryClientError extends Schema.TaggedError<MemoryClientError>()(
@@ -305,7 +306,10 @@ export interface MemoryClientShape {
   readonly recall: (
     query: MemoryRecallQuery,
   ) => Effect.Effect<ReadonlyArray<MemoryRecallResult>, MemoryClientError>;
-  readonly get: (id: string) => Effect.Effect<Readonly<Record<string, unknown>>, MemoryClientError>;
+  readonly get: (
+    id: string,
+    threadId?: string,
+  ) => Effect.Effect<Readonly<Record<string, unknown>>, MemoryClientError>;
   readonly pending: (
     since?: string,
   ) => Effect.Effect<ReadonlyArray<MemoryProposal>, MemoryClientError>;
@@ -319,7 +323,10 @@ export interface MemoryClientShape {
     id: string,
     taker: { readonly threadId: string; readonly link: string },
   ) => Effect.Effect<MemoryDefectState, MemoryClientError>;
-  readonly release: (id: string) => Effect.Effect<MemoryDefectState, MemoryClientError>;
+  readonly release: (
+    id: string,
+    threadId?: string,
+  ) => Effect.Effect<MemoryDefectState, MemoryClientError>;
   readonly getSettings: () => Effect.Effect<MemoryServerSettings, MemoryClientError>;
   readonly updateSettings: (patch: {
     readonly cleanerConfidenceFloor: number;
@@ -526,16 +533,17 @@ const makeMemoryClient = (
             kind: query.kind,
             audience: query.audience,
             limit: query.limit === undefined ? undefined : String(query.limit),
+            threadId: query.threadId,
           },
         }).pipe(
           Effect.flatMap(decoded(RecallResponse)),
           Effect.map((response) => response.results),
         ),
       ),
-    get: (id) =>
+    get: (id, threadId) =>
       call(
         "get",
-        send("GET", `/records/${segment(id)}`).pipe(
+        send("GET", `/records/${segment(id)}`, { query: { threadId } }).pipe(
           Effect.flatMap(decoded(RecordBody)),
           Effect.map(normalizeRecord),
         ),
@@ -576,10 +584,12 @@ const makeMemoryClient = (
           Effect.flatMap((body) => defectStateOf(id, body)),
         ),
       ),
-    release: (id) =>
+    release: (id, threadId) =>
       call(
         "release",
-        send("POST", `/records/${segment(id)}/release`, { body: {} }).pipe(
+        send("POST", `/records/${segment(id)}/release`, {
+          body: threadId === undefined ? {} : { threadId },
+        }).pipe(
           Effect.flatMap(decoded(RecordBody)),
           Effect.flatMap((body) => defectStateOf(id, body)),
         ),
