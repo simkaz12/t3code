@@ -20,6 +20,8 @@ import {
   MemoryClientError,
   type MemoryAnswerBody,
   type MemoryAsk,
+  type MemoryCloseReason,
+  type MemoryEffort,
   type MemoryProposeBody,
 } from "./client.ts";
 import { MemoryToolkit } from "./tools.ts";
@@ -70,7 +72,13 @@ interface ProposeInput {
   readonly left_because?: string | undefined;
   readonly fix_hint?: string | undefined;
   readonly impact?: string | undefined;
+  readonly scope_globs?: ReadonlyArray<string> | undefined;
+  readonly scope_package?: string | undefined;
+  readonly found_by?: string | undefined;
+  readonly effort?: MemoryEffort | undefined;
+  readonly checks?: ReadonlyArray<string> | undefined;
   readonly closes?: string | undefined;
+  readonly close_reason?: MemoryCloseReason | undefined;
   readonly supersedes?: ReadonlyArray<string> | undefined;
 }
 
@@ -111,7 +119,7 @@ const askInstruction = (
   ].join("\n");
 };
 
-const DEFECT_REQUIRED = ["where", "trigger", "left_because"] as const;
+const DEFECT_REQUIRED = ["where", "trigger", "left_because", "checks"] as const;
 
 const proposalFields = (input: ProposeInput): MemoryProposeBody["fields"] => {
   if (input.kind !== "defect")
@@ -127,13 +135,21 @@ const proposalFields = (input: ProposeInput): MemoryProposeBody["fields"] => {
     ...(input.left_because === undefined ? {} : { left_because: input.left_because }),
     ...(input.fix_hint === undefined ? {} : { fix_hint: input.fix_hint }),
     ...(input.impact === undefined ? {} : { impact: input.impact }),
+    ...(input.checks === undefined ? {} : { checks: input.checks }),
+    ...(input.scope_globs === undefined ? {} : { scope_globs: input.scope_globs }),
+    ...(input.scope_package === undefined ? {} : { scope_package: input.scope_package }),
+    ...(input.found_by === undefined ? {} : { found_by: input.found_by }),
+    ...(input.effort === undefined ? {} : { effort: input.effort }),
   };
 };
 
 const proposalProblem = (input: ProposeInput): string | null => {
   if (input.closes !== undefined && input.supersedes !== undefined)
     return "Pass `closes` or `supersedes`, not both: closing a defect and replacing notes are separate proposals.";
-  if (input.closes !== undefined) return null;
+  if (input.closes !== undefined)
+    return input.close_reason === undefined
+      ? "`closes` needs `close_reason`: fixed, wont_fix or code_removed."
+      : null;
   if (input.kind === "decision" && input.rejected === undefined)
     return "A decision needs `rejected`: the alternative that was ruled out.";
   if (input.kind !== "defect") return null;
@@ -240,7 +256,14 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
           ...(input.supersedes === undefined ? {} : { supersedes: input.supersedes }),
           ...(input.closes === undefined
             ? {}
-            : { target: { recordId: input.closes, source: "v2", action: "close" } }),
+            : {
+                target: {
+                  recordId: input.closes,
+                  source: "v2",
+                  action: "close",
+                  ...(input.close_reason === undefined ? {} : { closeReason: input.close_reason }),
+                },
+              }),
         })
         .pipe(Effect.mapError(memoryFailure));
 

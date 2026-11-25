@@ -758,6 +758,11 @@ const defectInput = {
   trigger: "Apply a coupon, then reload the cart page.",
   left_because: "The fix belongs to the pricing rewrite.",
   fix_hint: "Read the coupon from the session in the calculator.",
+  checks: ["php artisan test --filter=CartReloadTest"],
+  scope_globs: ["app/Cart/**"],
+  scope_package: "cart",
+  found_by: "recon of the cart reload ticket",
+  effort: "small",
   audience: "navigator",
   stage: "recon",
 } as const;
@@ -783,6 +788,11 @@ it.effect("proposes a defect with its fields, audience and stage", () =>
           trigger: defectInput.trigger,
           left_because: defectInput.left_because,
           fix_hint: defectInput.fix_hint,
+          checks: defectInput.checks,
+          scope_globs: defectInput.scope_globs,
+          scope_package: defectInput.scope_package,
+          found_by: defectInput.found_by,
+          effort: defectInput.effort,
         },
         audience: "navigator",
         provenance: { stage: "recon" },
@@ -792,50 +802,101 @@ it.effect("proposes a defect with its fields, audience and stage", () =>
   ),
 );
 
-it.effect("refuses a defect missing a required field before calling the server", () =>
+it.effect.each([{ missing: "trigger" }, { missing: "checks" }] as const)(
+  "refuses a defect missing $missing before calling the server",
+  ({ missing }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stub = yield* stubServer;
+        const { [missing]: _omitted, ...incomplete } = defectInput;
+
+        const result = yield* callTool({
+          memoryServerUrl: stub.url,
+          call: (toolkit) =>
+            toolkit.handle("memory_propose", incomplete).pipe(Stream.unwrap, collect),
+        });
+
+        expect(result).toMatchObject({ code: "invalid_request" });
+        expect(JSON.stringify(result)).toContain(missing);
+        expect(stub.requests).toEqual([]);
+      }),
+    ),
+);
+
+const closeInput = {
+  kind: "fact",
+  headline: "Coupon survives a cart reload",
+  claim: "The reload test in CartReloadTest now passes with the coupon applied.",
+  closes: "defect-1",
+  stage: "land",
+} as const;
+
+it.effect.each(["fixed", "code_removed", "wont_fix"] as const)(
+  "sends a close target with the %s reason when a proposal carries closes",
+  (closeReason) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stub = yield* stubServer;
+
+        yield* callTool({
+          memoryServerUrl: stub.url,
+          memoryScope: "acme",
+          call: (toolkit) =>
+            toolkit
+              .handle("memory_propose", { ...closeInput, close_reason: closeReason })
+              .pipe(Stream.unwrap, collect),
+        });
+
+        expect(stub.requests[0]?.body).toMatchObject({
+          kind: "fact",
+          target: { recordId: "defect-1", source: "v2", action: "close", closeReason },
+          provenance: { stage: "land" },
+        });
+      }),
+    ),
+);
+
+it.effect("refuses closes without close_reason before calling the server", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const stub = yield* stubServer;
-      const { trigger: _trigger, ...incomplete } = defectInput;
 
       const result = yield* callTool({
         memoryServerUrl: stub.url,
         call: (toolkit) =>
-          toolkit.handle("memory_propose", incomplete).pipe(Stream.unwrap, collect),
+          toolkit.handle("memory_propose", closeInput).pipe(Stream.unwrap, collect),
       });
 
       expect(result).toMatchObject({ code: "invalid_request" });
-      expect(JSON.stringify(result)).toContain("trigger");
+      expect(JSON.stringify(result)).toContain("close_reason");
       expect(stub.requests).toEqual([]);
     }),
   ),
 );
 
-it.effect("sends a close target for the defect when a proposal carries closes", () =>
+it.effect("reports a wont_fix close as pending, not closed", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const stub = yield* stubServer;
+      const stub = yield* stubServerWith({
+        ...proposalResponse,
+        id: "proposal-6",
+        kind: "defect",
+        status: "pending",
+        target: { recordId: "defect-1", source: "v2", action: "close", closeReason: "wont_fix" },
+        resolvedAt: null,
+        resolution: null,
+      });
 
-      yield* callTool({
+      const result = yield* callTool({
         memoryServerUrl: stub.url,
         memoryScope: "acme",
         call: (toolkit) =>
           toolkit
-            .handle("memory_propose", {
-              kind: "fact",
-              headline: "Coupon survives a cart reload",
-              claim: "The reload test in CartReloadTest now passes with the coupon applied.",
-              closes: "defect-1",
-              stage: "land",
-            })
+            .handle("memory_propose", { ...closeInput, close_reason: "wont_fix" })
             .pipe(Stream.unwrap, collect),
       });
 
-      expect(stub.requests[0]?.body).toMatchObject({
-        kind: "fact",
-        target: { recordId: "defect-1", source: "v2", action: "close" },
-        provenance: { stage: "land" },
-      });
+      expect(result).toMatchObject({ proposalId: "proposal-6", status: "pending", recordId: null });
     }),
   ),
 );
