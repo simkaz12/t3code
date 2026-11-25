@@ -25,6 +25,12 @@ export type MemoryOrigin = typeof MemoryOrigin.Type;
 
 export const MemorySource = Schema.Literals(["v2", "legacy"]);
 
+export const MemoryEffort = Schema.Literals(["small", "medium", "large"]);
+export type MemoryEffort = typeof MemoryEffort.Type;
+
+export const MemoryCloseReason = Schema.Literals(["fixed", "wont_fix", "code_removed"]);
+export type MemoryCloseReason = typeof MemoryCloseReason.Type;
+
 export const MemoryReasonClass = Schema.Literals(["correction", "changed", "elaborated"]);
 export type MemoryReasonClass = typeof MemoryReasonClass.Type;
 
@@ -36,6 +42,11 @@ export const MemoryProposalFields = Schema.Struct({
   left_because: Schema.optional(Schema.String),
   fix_hint: Schema.optional(Schema.String),
   impact: Schema.optional(Schema.String),
+  checks: Schema.optional(Schema.Array(Schema.String)),
+  scope_globs: Schema.optional(Schema.Array(Schema.String)),
+  scope_package: Schema.optional(Schema.String),
+  found_by: Schema.optional(Schema.String),
+  effort: Schema.optional(MemoryEffort),
 });
 
 const optionalText = Schema.optional(Schema.NullOr(Schema.String));
@@ -79,6 +90,7 @@ export const MemoryProposalTarget = Schema.Struct({
   recordHeadline: Schema.optional(Schema.NullOr(Schema.String)),
   replacementHeadline: Schema.optional(Schema.NullOr(Schema.String)),
   reason: Schema.optional(Schema.NullOr(Schema.String)),
+  closeReason: Schema.optional(Schema.NullOr(MemoryCloseReason)),
 });
 
 export interface MemoryProposeBody {

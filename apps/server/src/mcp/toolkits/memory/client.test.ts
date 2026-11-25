@@ -495,3 +495,87 @@ it.effect("answer posts to the proposal and decodes a folded ask row", () =>
     }),
   ),
 );
+
+it.effect("propose sends the close reason and decodes a wont_fix close held as pending", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stub = yield* stubServer(() => ({
+        status: 201,
+        body: {
+          id: "proposal-5",
+          status: "pending",
+          kind: "defect",
+          headline: "Coupon survives a cart reload",
+          fields: { claim: "The coupon survives." },
+          scope: "acme",
+          provenance: {
+            threadId: "thread:memory",
+            threadTitle: "Cart",
+            projectId: "project:acme",
+            branch: null,
+            machine: "laptop",
+            link: "t3-thread://x",
+            excerpt: "",
+          },
+          origin: "agent",
+          target: { recordId: "defect-1", source: "v2", action: "close", closeReason: "wont_fix" },
+          purpose: null,
+          topic: null,
+          checks: { status: "skipped" },
+          flags: [],
+          neighbours: [],
+          suggestion: null,
+          createdAt: "2026-11-13T10:00:00.000Z",
+          resolvedAt: null,
+          resolution: null,
+        },
+      }));
+
+      const proposal = yield* withClient(stub.url, (client) =>
+        client.propose({
+          kind: "defect",
+          headline: "Coupon survives a cart reload",
+          fields: { claim: "The coupon survives." },
+          scope: "acme",
+          provenance: {
+            threadId: "thread:memory",
+            threadTitle: "Cart",
+            projectId: "project:acme",
+            branch: null,
+            machine: "laptop",
+            link: "t3-thread://x",
+            excerpt: "",
+          },
+          origin: "agent",
+          target: { recordId: "defect-1", source: "v2", action: "close", closeReason: "wont_fix" },
+        }),
+      );
+
+      assert.deepEqual(stub.requests[0]?.body, {
+        kind: "defect",
+        headline: "Coupon survives a cart reload",
+        fields: { claim: "The coupon survives." },
+        scope: "acme",
+        provenance: {
+          threadId: "thread:memory",
+          threadTitle: "Cart",
+          projectId: "project:acme",
+          branch: null,
+          machine: "laptop",
+          link: "t3-thread://x",
+          excerpt: "",
+        },
+        origin: "agent",
+        target: {
+          recordId: "defect-1",
+          source: "v2",
+          action: "close",
+          closeReason: "wont_fix",
+        },
+      });
+      assert.equal(proposal.status, "pending");
+      assert.equal(proposal.target?.closeReason, "wont_fix");
+      assert.equal(proposal.resolution, null);
+    }),
+  ),
+);

@@ -10,7 +10,9 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import {
   MemoryAudience,
   MemoryClient,
+  MemoryCloseReason,
   MemoryDefectStatus,
+  MemoryEffort,
   MemoryKind,
   MemoryRecallResult,
   MemorySource,
@@ -33,7 +35,7 @@ const shared = {
 const MemoryProposeTool = Tool.make("memory_propose", {
   ...shared,
   description:
-    "Propose a memory. The server saves it at once and returns `recordId`; the cleaner reviews it later. `status` is `approved` for a new record, or `reinforced` when the server counted your proposal against an existing record and wrote nothing new, and then `recordId` is that record. Status `asked` means the note is held, not saved: `ask` carries the existing record and the reply to give, and you answer with `memory_answer` in the same turn. `kind`: fact, decision (needs `rejected`) or defect (needs `where`, `trigger`, `left_because`; `claim` is the symptom). `headline` is the claim in one sentence. No ticket ids, dates or file:line in `claim`. `closes` closes that defect at once. `supersedes` retires the notes this one replaces. `flags` and `neighbours` show what the checks found and which saved records are close.",
+    "Propose a memory. The server saves it at once and returns `recordId`; the cleaner reviews it later. `status` is `approved` for a new record, or `reinforced` when the server counted your proposal against an existing record and wrote nothing new, and then `recordId` is that record. Status `asked` means the note is held, not saved: `ask` carries the existing record and the reply to give, and you answer with `memory_answer` in the same turn. `kind`: fact, decision (needs `rejected`) or defect (needs `where`, `trigger`, `left_because` and `checks`; `claim` is the symptom, `checks` the commands or steps that show it is fixed; optional `scope_globs`, `scope_package`, `found_by`, `fix_hint`, `effort`). `headline` is the claim in one sentence. No ticket ids, dates or file:line in `claim`. `closes` closes a defect and needs `close_reason`: `fixed` or `code_removed` close at once and need the take by this thread, `wont_fix` is held for the owner. `supersedes` retires the notes this one replaces. `flags` and `neighbours` show what the checks found and which saved records are close.",
   parameters: Schema.Struct({
     kind: MemoryKind,
     headline: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
@@ -44,9 +46,19 @@ const MemoryProposeTool = Tool.make("memory_propose", {
     left_because: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(1000))),
     fix_hint: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(1000))),
     impact: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(1000))),
+    scope_globs: Schema.optional(
+      Schema.Array(TrimmedNonEmptyString).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+    ),
+    scope_package: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
+    found_by: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
+    effort: Schema.optional(MemoryEffort),
+    checks: Schema.optional(
+      Schema.Array(TrimmedNonEmptyString).check(Schema.isMinLength(1), Schema.isMaxLength(10)),
+    ),
     audience: Schema.optional(MemoryAudience),
     stage: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(40))),
     closes: Schema.optional(TrimmedNonEmptyString),
+    close_reason: Schema.optional(MemoryCloseReason),
     supersedes: Schema.optional(
       Schema.Array(TrimmedNonEmptyString)
         .check(Schema.isMinLength(1), Schema.isMaxLength(5))
