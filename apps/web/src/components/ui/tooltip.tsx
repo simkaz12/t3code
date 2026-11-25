@@ -31,7 +31,9 @@ function createTooltipHoverTracker() {
     },
     dismissUnfocused() {
       const tooltip = hovered;
-      if (!tooltip || tooltip.trigger.contains(tooltip.trigger.ownerDocument.activeElement)) {
+      if (!tooltip) return;
+      const focused = tooltip.trigger.ownerDocument.activeElement;
+      if (focused && tooltip.trigger.contains(focused) && focused.matches(":focus-visible")) {
         return;
       }
       hovered = null;
@@ -150,7 +152,7 @@ function TooltipPopup({
           data-slot="tooltip-popup"
           {...props}
         >
-          <div className="px-2 py-1" data-slot="tooltip-viewport">
+          <div className="min-w-0 px-2 py-1" data-slot="tooltip-viewport">
             {children}
           </div>
         </TooltipPrimitive.Popup>

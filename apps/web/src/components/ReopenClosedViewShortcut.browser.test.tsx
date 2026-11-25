@@ -287,4 +287,16 @@ describe("root reopen shortcut", () => {
       expect(commands.includes("preview.expand")).toBe(forwarded);
     },
   );
+
+  it("forwards address-bar focus and zoom from a focused desktop page", async () => {
+    setup();
+    await using _shortcut = await renderShortcut();
+    expect(state.setShortcuts).toHaveBeenLastCalledWith(
+      expect.arrayContaining(
+        ["preview.focusUrl", "preview.zoomIn", "preview.zoomOut", "preview.resetZoom"].map(
+          (command) => expect.objectContaining({ command }),
+        ),
+      ),
+    );
+  });
 });

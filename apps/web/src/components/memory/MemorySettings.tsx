@@ -6,7 +6,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Input } from "../ui/input";
 import { SettingResetButton, SettingsRow } from "../settings/settingsLayout";
 import { useSettingsScope } from "../settings/SettingsScopeContext";
-import { searchableSetting } from "../settings/settingsSearch";
+import { useSearchableSetting } from "../settings/settingsSearch";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -22,6 +22,7 @@ import {
 } from "./memorySettings.logic";
 
 function CleanerConfidenceFloorRow() {
+  const setting = useSearchableSetting();
   const { target } = useSettingsScope();
   const environmentId = target?.environmentId ?? null;
   const memoryServerUrl = effectiveMemoryServerUrl(target);
@@ -68,7 +69,7 @@ function CleanerConfidenceFloorRow() {
 
   return (
     <SettingsRow
-      {...searchableSetting("memory-cleaner-confidence")}
+      {...setting("memory-cleaner-confidence")}
       description="Lowest Jev confidence at which the weekly memory cleaner proposes a replacement or a retirement. Stored on the memory server and shared by every machine that uses it."
     >
       <div className="mt-3 max-w-md pb-3.5">
@@ -100,6 +101,7 @@ function CleanerConfidenceFloorRow() {
 }
 
 export function MemorySettings() {
+  const setting = useSearchableSetting();
   const settings = useScopedSettings();
   const { targets } = useSettingsScope();
   const scopeKey = targets.map((target) => `${target.environmentId}:${target.projectId}`).join(",");
@@ -114,7 +116,7 @@ export function MemorySettings() {
       <SettingsRow
         serverScoped
         settingKeys={["memoryScope"]}
-        {...searchableSetting("memory-scope")}
+        {...setting("memory-scope")}
         description="Memory scope for proposals and searches from this project. Empty uses the repository folder name. Projects that share a value share memory."
         resetAction={
           mixedScope || settings.memoryScope !== "" ? (
@@ -146,7 +148,7 @@ export function MemorySettings() {
       <SettingsRow
         serverScoped
         settingKeys={["memoryServerUrl"]}
-        {...searchableSetting("memory-server-url")}
+        {...setting("memory-server-url")}
         description="Base URL of the memory server that agents propose to and search, such as http://localhost:8789/v2. Empty turns memory off for this environment."
         resetAction={
           mixedServerUrl || settings.memoryServerUrl !== "" ? (

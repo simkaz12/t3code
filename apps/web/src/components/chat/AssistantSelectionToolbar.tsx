@@ -4,6 +4,7 @@ import {
   type AssistantCitation,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { PlayIcon, QuoteIcon } from "lucide-react";
 import { use, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -43,6 +44,7 @@ export function AssistantSelectionToolbar({
   const owner = useId();
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
   const backgroundThread = use(BackgroundThreadContext);
+  const gt = useGT();
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the toolbar DOM node and clamps its position inside the window before paint
   useLayoutEffect(() => {
@@ -214,7 +216,7 @@ export function AssistantSelectionToolbar({
     <div
       ref={toolbarRef}
       role="toolbar"
-      aria-label="Selection actions"
+      aria-label={gt("Selection actions")}
       data-assistant-selection-toolbar=""
       className="fixed z-50 flex max-w-[calc(100vw-1rem)] gap-1"
       style={{ left: selection.position.x, top: selection.position.y }}
@@ -231,12 +233,14 @@ export function AssistantSelectionToolbar({
         size="xs"
         variant="glass"
         disabled={tooLong}
-        aria-label={tooLong ? "Selection is too long to cite" : "Cite selection in composer"}
+        aria-label={tooLong ? gt("Selection is too long to cite") : gt("Cite selection in composer")}
         onPointerDown={(event) => event.preventDefault()}
         onClick={cite}
       >
         <QuoteIcon aria-hidden="true" className="size-3.5" />
-        {tooLong ? "Shorten selection" : "Cite"}
+        {tooLong
+          ? gt("Shorten selection")
+          : gt("Cite", { $context: "verb, button that quotes the selected text" })}
       </Button>
       {onRun ? (
         <Button
@@ -244,12 +248,12 @@ export function AssistantSelectionToolbar({
           size="xs"
           variant="glass"
           disabled={!selection.command}
-          aria-label="Run selection in terminal"
+          aria-label={gt("Run selection in terminal")}
           onPointerDown={(event) => event.preventDefault()}
           onClick={run}
         >
           <PlayIcon aria-hidden="true" className="size-3.5" />
-          Run
+          {gt("Run")}
         </Button>
       ) : null}
     </div>,
