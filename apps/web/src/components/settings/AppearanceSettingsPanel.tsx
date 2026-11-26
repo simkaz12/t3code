@@ -385,7 +385,7 @@ export function AppearanceSettingsPanel() {
             resetAction={
               cityBackgroundId !== DEFAULT_CITY_BACKGROUND_ID ? (
                 <SettingResetButton
-                  label="background"
+                  ariaLabel={gt("Reset background to default")}
                   onClick={() => setCityBackgroundId(DEFAULT_CITY_BACKGROUND_ID)}
                 />
               ) : null
