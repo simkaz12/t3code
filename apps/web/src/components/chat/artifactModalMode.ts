@@ -1,5 +1,5 @@
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
-import type { RunId } from "@t3tools/contracts";
+import type { MessageId, RunId } from "@t3tools/contracts";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 
 import type { ChatFileAttachment } from "~/types";
@@ -11,7 +11,8 @@ export type ArtifactTarget =
       readonly line?: number | undefined;
       readonly runId?: RunId | undefined;
     }
-  | { readonly kind: "attachment"; readonly attachment: ChatFileAttachment };
+  | { readonly kind: "attachment"; readonly attachment: ChatFileAttachment }
+  | { readonly kind: "turn"; readonly runId: RunId };
 
 export type ArtifactOpenHandler = (target: {
   readonly path: string;
@@ -45,4 +46,44 @@ export function resolveArtifactMode(
   summaries: ReadonlyArray<ThreadCheckpointSummary>,
 ): ArtifactMode {
   return findArtifactSummary(target, summaries) ? "diff" : "file";
+}
+
+export function findAssistantTurnSummary(
+  summaries: ReadonlyArray<ThreadCheckpointSummary>,
+  messageId: MessageId,
+): ThreadCheckpointSummary | undefined {
+  return summaries.find(
+    (summary) => summary.assistantMessageId === messageId && summary.files.length > 0,
+  );
+}
+
+export function findTurnSummary(
+  target: ArtifactTarget,
+  summaries: ReadonlyArray<ThreadCheckpointSummary>,
+): ThreadCheckpointSummary | undefined {
+  if (target.kind !== "turn") return undefined;
+  return summaries.find((summary) => summary.runId === target.runId);
+}
+
+export function resolveTurnFilePath(
+  summary: ThreadCheckpointSummary | undefined,
+  selectedPath: string | null,
+): string | null {
+  if (!summary || summary.files.length === 0) return null;
+  const selected = summary.files.find((file) => file.path === selectedPath);
+  return (selected ?? summary.files[0]!).path;
+}
+
+export function countHiddenTurnFiles(summary: ThreadCheckpointSummary): number {
+  return Math.max(0, (summary.filesTotal?.count ?? summary.files.length) - summary.files.length);
+}
+
+export function stepTurnFilePath(
+  summary: ThreadCheckpointSummary,
+  currentPath: string | null,
+  dir: 1 | -1,
+): string | null {
+  const index = summary.files.findIndex((file) => file.path === currentPath);
+  const next = summary.files[Math.min(summary.files.length - 1, Math.max(0, index + dir))];
+  return next?.path ?? null;
 }

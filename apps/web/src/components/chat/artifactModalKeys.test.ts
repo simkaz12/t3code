@@ -97,6 +97,21 @@ describe("resolveViewerKey", () => {
     ).toBe("openFind");
   });
 
+  it("selects the next or previous file with the arrow keys only when the file list has focus", () => {
+    const withList = state({ fileListFocused: true });
+
+    expect(resolveViewerKey(key("ArrowDown"), withList)).toMatchObject({
+      action: "selectFile",
+      dir: 1,
+    });
+    expect(resolveViewerKey(key("ArrowUp"), withList)).toMatchObject({
+      action: "selectFile",
+      dir: -1,
+    });
+    expect(resolveViewerKey(key("ArrowDown"), state())).toBeNull();
+    expect(resolveViewerKey(key("ArrowUp"), state({ fileListFocused: false }))).toBeNull();
+  });
+
   it("leaves Escape to the dialog", () => {
     expect(
       resolveViewerKey(key("Escape"), state({ hasCodeView: true, isMarkdown: true })),
