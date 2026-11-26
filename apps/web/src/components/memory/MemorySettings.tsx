@@ -121,7 +121,7 @@ export function MemorySettings() {
         resetAction={
           mixedScope || settings.memoryScope !== "" ? (
             <SettingResetButton
-              label="memory scope"
+              ariaLabel="Reset memory scope to default"
               onClick={() => updateSettings({ memoryScope: "" })}
             />
           ) : null
@@ -153,7 +153,7 @@ export function MemorySettings() {
         resetAction={
           mixedServerUrl || settings.memoryServerUrl !== "" ? (
             <SettingResetButton
-              label="memory server URL"
+              ariaLabel="Reset memory server URL to default"
               onClick={() => updateSettings({ memoryServerUrl: "" })}
             />
           ) : null

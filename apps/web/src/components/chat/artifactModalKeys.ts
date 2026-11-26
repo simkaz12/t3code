@@ -9,7 +9,8 @@ export type ViewerAction =
   | "scrollBottom"
   | "toggleRaw"
   | "toggleFullFile"
-  | "openFind";
+  | "openFind"
+  | "selectFile";
 
 export interface ViewerKeyEvent {
   readonly key: string;
@@ -26,6 +27,7 @@ export interface ViewerKeyState {
   readonly isMarkdown: boolean;
   readonly diffAvailable: boolean;
   readonly hasCodeView: boolean;
+  readonly fileListFocused?: boolean;
 }
 
 export interface ViewerKeyResult {
@@ -99,6 +101,10 @@ export function resolveViewerKey(
       return state.diffAvailable ? hit("toggleFullFile") : null;
     case "/":
       return state.hasCodeView ? hit("openFind") : null;
+    case "ArrowDown":
+      return state.fileListFocused ? hit("selectFile", 1) : null;
+    case "ArrowUp":
+      return state.fileListFocused ? hit("selectFile", -1) : null;
     default:
       return null;
   }

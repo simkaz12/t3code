@@ -1,10 +1,18 @@
-import { RunId } from "@t3tools/contracts";
+import { MessageId, RunId } from "@t3tools/contracts";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { ChatFileAttachment } from "~/types";
 
-import { resolveArtifactMode, type ArtifactTarget } from "./artifactModalMode";
+import {
+  countHiddenTurnFiles,
+  findAssistantTurnSummary,
+  findTurnSummary,
+  resolveArtifactMode,
+  resolveTurnFilePath,
+  stepTurnFilePath,
+  type ArtifactTarget,
+} from "./artifactModalMode";
 
 const runId = RunId.make("run-1");
 
@@ -64,5 +72,47 @@ describe("resolveArtifactMode", () => {
     const attachment = { id: "a-1", name: "notes.md" } as ChatFileAttachment;
 
     expect(resolveArtifactMode({ kind: "attachment", attachment }, [summary()])).toBe("file");
+  });
+});
+
+describe("turn target", () => {
+  const messageId = MessageId.make("message-1");
+  const turn = summary({
+    paths: ["src/a.ts", "src/b.ts", "src/c.ts"],
+    assistantMessageId: messageId,
+  });
+
+  it("finds the changed-files summary for an assistant message only when it has files", () => {
+    expect(findAssistantTurnSummary([turn], messageId)).toBe(turn);
+    expect(findAssistantTurnSummary([turn], MessageId.make("message-2"))).toBeUndefined();
+    expect(
+      findAssistantTurnSummary([summary({ paths: [], assistantMessageId: messageId })], messageId),
+    ).toBeUndefined();
+  });
+
+  it("looks the summary up by run id", () => {
+    expect(findTurnSummary({ kind: "turn", runId }, [turn])).toBe(turn);
+    expect(findTurnSummary({ kind: "turn", runId: RunId.make("run-2") }, [turn])).toBeUndefined();
+    expect(findTurnSummary(fileTarget(), [turn])).toBeUndefined();
+  });
+
+  it("selects the first file by default and keeps a still-present selection", () => {
+    expect(resolveTurnFilePath(turn, null)).toBe("src/a.ts");
+    expect(resolveTurnFilePath(turn, "src/b.ts")).toBe("src/b.ts");
+    expect(resolveTurnFilePath(turn, "src/gone.ts")).toBe("src/a.ts");
+    expect(resolveTurnFilePath(undefined, null)).toBeNull();
+  });
+
+  it("counts files the wire summary left out", () => {
+    expect(countHiddenTurnFiles(turn)).toBe(0);
+    expect(
+      countHiddenTurnFiles({ ...turn, filesTotal: { count: 203, additions: 0, deletions: 0 } }),
+    ).toBe(203 - turn.files.length);
+  });
+
+  it("steps through files without wrapping", () => {
+    expect(stepTurnFilePath(turn, "src/a.ts", 1)).toBe("src/b.ts");
+    expect(stepTurnFilePath(turn, "src/c.ts", 1)).toBe("src/c.ts");
+    expect(stepTurnFilePath(turn, "src/a.ts", -1)).toBe("src/a.ts");
   });
 });

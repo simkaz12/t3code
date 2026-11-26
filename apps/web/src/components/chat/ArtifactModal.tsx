@@ -3,9 +3,18 @@ import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import type { RunId, ScopedThreadRef } from "@t3tools/contracts";
 import type { CodeViewHandle } from "@pierre/diffs/react";
+import { useGT } from "gt-react";
 import { XIcon } from "lucide-react";
 import { Atom } from "effect/reactivity";
-import { lazy, Suspense, useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useProject, useQuietThreadShell, useThreadCheckpointSummaries } from "~/state/entities";
@@ -14,6 +23,7 @@ import { formatWorkspaceRelativePath } from "~/filePathDisplay";
 import { Button } from "../ui/button";
 import { Dialog, DialogClose, DialogPopup, DialogTitle } from "../ui/dialog";
 import { Kbd } from "../ui/kbd";
+import { ArtifactTurnFileList } from "./ArtifactTurnFileList";
 import { FileSurfaceFailure, FileSurfaceLoading } from "../files/fileSurfaceChrome";
 import { isMarkdownPreviewFile } from "../files/filePreviewMode";
 import { composerFloatingLayerProps } from "./composerEventScope";
@@ -24,7 +34,10 @@ import {
 } from "./artifactModalKeys";
 import {
   findArtifactSummary,
+  findTurnSummary,
   resolveArtifactMode,
+  resolveTurnFilePath,
+  stepTurnFilePath,
   type ArtifactMode,
   type ArtifactOpenHandler,
   type ArtifactTarget,
@@ -44,6 +57,10 @@ interface ArtifactModalState {
   readonly view: ArtifactMode;
   readonly markdownRaw: boolean;
 }
+
+const TURN_FILE_LIST_SELECTOR = "[data-turn-file-list]";
+
+type ResolvedArtifactTarget = Exclude<ArtifactTarget, { readonly kind: "turn" }>;
 
 type ArtifactCodeViewHandle = CodeViewHandle<undefined, undefined>;
 
@@ -96,12 +113,12 @@ function updateArtifactModal(patch: Partial<Pick<ArtifactModalState, "view" | "m
 
 function artifactModalKey(state: ArtifactModalState): string {
   const { target } = state;
-  return target.kind === "attachment"
-    ? `${state.threadKey}:attachment:${target.attachment.id}`
-    : `${state.threadKey}:file:${target.path}:${target.line ?? ""}:${target.runId ?? ""}`;
+  if (target.kind === "attachment") return `${state.threadKey}:attachment:${target.attachment.id}`;
+  if (target.kind === "turn") return `${state.threadKey}:turn:${target.runId}`;
+  return `${state.threadKey}:file:${target.path}:${target.line ?? ""}:${target.runId ?? ""}`;
 }
 
-function artifactTitle(target: ArtifactTarget, cwd: string | null): string {
+function artifactTitle(target: ResolvedArtifactTarget, cwd: string | null): string {
   return target.kind === "attachment"
     ? target.attachment.name
     : formatWorkspaceRelativePath(target.path, cwd ?? undefined);
@@ -158,7 +175,9 @@ interface ArtifactWorkspace {
 }
 
 function ArtifactBody(props: {
-  readonly state: ArtifactModalState;
+  readonly threadKey: string;
+  readonly target: ResolvedArtifactTarget;
+  readonly markdownRaw: boolean;
   readonly threadRef: ScopedThreadRef | null;
   readonly cwd: string | null;
   readonly draft: boolean;
@@ -167,10 +186,10 @@ function ArtifactBody(props: {
   readonly codeViewRef: RefObject<ArtifactCodeViewHandle | null>;
   readonly summaries: ReadonlyArray<ThreadCheckpointSummary>;
 }) {
-  const { state, threadRef, cwd, view } = props;
-  const { target } = state;
+  const { threadKey, target, threadRef, cwd, view } = props;
+  const gt = useGT();
   if (threadRef === null) {
-    return <FileSurfaceFailure message="The thread for this artifact is unavailable." />;
+    return <FileSurfaceFailure message={gt("The thread for this artifact is unavailable.")} />;
   }
 
   const summary = view === "diff" ? findArtifactSummary(target, props.summaries) : undefined;
@@ -192,8 +211,8 @@ function ArtifactBody(props: {
       draft={props.draft}
       workspaceMutationId={props.workspaceMutationId}
       target={target}
-      markdownRaw={state.markdownRaw}
-      onOpenArtifact={(next) => openArtifactModal(state.threadKey, { kind: "file", ...next })}
+      markdownRaw={props.markdownRaw}
+      onOpenArtifact={(next) => openArtifactModal(threadKey, { kind: "file", ...next })}
     />
   );
 }
@@ -203,18 +222,28 @@ function ArtifactModal(props: {
   readonly workspace: ArtifactWorkspace;
 }) {
   const { state, workspace } = props;
-  const { target, markdownRaw } = state;
+  const { markdownRaw } = state;
   const threadRef = parseScopedThreadKey(state.threadKey);
+  const gt = useGT();
   const shell = useQuietThreadShell(threadRef);
   const project = useProject(
     shell ? { environmentId: shell.environmentId, projectId: shell.projectId } : null,
   );
   const summaries = useThreadCheckpointSummaries(threadRef);
   const cwd = shell?.worktreePath ?? project?.workspaceRoot ?? workspace.root;
-  const mode = resolveArtifactMode(target, summaries);
+  const [selectedTurnPath, setSelectedTurnPath] = useState<string | null>(null);
+  const turnSummary = findTurnSummary(state.target, summaries);
+  const turnPath = resolveTurnFilePath(turnSummary, selectedTurnPath);
+  const target: ResolvedArtifactTarget | null =
+    state.target.kind !== "turn"
+      ? state.target
+      : turnPath === null
+        ? null
+        : { kind: "file", path: turnPath, runId: state.target.runId };
+  const mode = target ? resolveArtifactMode(target, summaries) : "file";
   const view = mode === "diff" ? state.view : "file";
   const isMarkdown =
-    target.kind === "file" && view === "file" && isMarkdownPreviewFile(target.path);
+    target?.kind === "file" && view === "file" && isMarkdownPreviewFile(target.path);
 
   const popupRef = useRef<HTMLDivElement>(null);
   const codeViewRef = useRef<ArtifactCodeViewHandle | null>(null);
@@ -235,7 +264,7 @@ function ArtifactModal(props: {
     };
   }, []);
 
-  const title = artifactTitle(target, cwd);
+  const title = target ? artifactTitle(target, cwd) : gt("Changes");
   const toggleFullFile = () => updateArtifactModal({ view: view === "diff" ? "file" : "diff" });
   const toggleRaw = () => updateArtifactModal({ markdownRaw: !markdownRaw });
 
@@ -253,6 +282,10 @@ function ArtifactModal(props: {
       isMarkdown,
       diffAvailable: mode === "diff",
       hasCodeView: view === "diff",
+      fileListFocused:
+        turnSummary !== undefined &&
+        event.target instanceof Element &&
+        event.target.closest(TURN_FILE_LIST_SELECTOR) !== null,
     });
     if (!hit) {
       keyHistoryRef.current = { lastKey: event.key, lastKeyAt: now };
@@ -266,6 +299,10 @@ function ArtifactModal(props: {
     if (hit.action === "toggleRaw") return toggleRaw();
     if (hit.action === "toggleFullFile") return toggleFullFile();
     if (hit.action === "openFind") return codeViewRef.current?.getInstance()?.openSearch();
+    if (hit.action === "selectFile") {
+      if (turnSummary) setSelectedTurnPath(stepTurnFilePath(turnSummary, turnPath, hit.dir ?? 1));
+      return;
+    }
 
     const popup = popupRef.current;
     const container = popup ? findScrollContainer(popup) : null;
@@ -302,7 +339,7 @@ function ArtifactModal(props: {
               aria-pressed={markdownRaw}
               onClick={toggleRaw}
             >
-              {markdownRaw ? "Rendered" : "Raw"}
+              {markdownRaw ? gt("Rendered") : gt("Raw")}
               <Kbd>r</Kbd>
             </Button>
           ) : null}
@@ -314,27 +351,42 @@ function ArtifactModal(props: {
               aria-pressed={view === "file"}
               onClick={toggleFullFile}
             >
-              {view === "diff" ? "Full file" : "Diff"}
+              {view === "diff" ? gt("Full file") : gt("Diff")}
               <Kbd>f</Kbd>
             </Button>
           ) : null}
-          <DialogClose render={<Button size="icon-sm" variant="ghost" aria-label="Close" />}>
+          <DialogClose render={<Button size="icon-sm" variant="ghost" aria-label={gt("Close")} />}>
             <XIcon />
           </DialogClose>
         </div>
-        <div className="flex min-h-0 flex-1 select-text flex-col overflow-hidden">
-          <Suspense fallback={<FileSurfaceLoading />}>
-            <ArtifactBody
-              state={state}
-              threadRef={threadRef}
-              cwd={cwd}
-              draft={workspace.draft}
-              workspaceMutationId={workspace.mutationId}
-              view={view}
-              codeViewRef={codeViewRef}
-              summaries={summaries}
+        <div className="flex min-h-0 flex-1 select-text flex-col overflow-hidden sm:flex-row">
+          {turnSummary ? (
+            <ArtifactTurnFileList
+              summary={turnSummary}
+              selectedPath={turnPath}
+              onSelect={setSelectedTurnPath}
             />
-          </Suspense>
+          ) : null}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            {target ? (
+              <Suspense fallback={<FileSurfaceLoading />}>
+                <ArtifactBody
+                  threadKey={state.threadKey}
+                  target={target}
+                  markdownRaw={markdownRaw}
+                  threadRef={threadRef}
+                  cwd={cwd}
+                  draft={workspace.draft}
+                  workspaceMutationId={workspace.mutationId}
+                  view={view}
+                  codeViewRef={codeViewRef}
+                  summaries={summaries}
+                />
+              </Suspense>
+            ) : (
+              <FileSurfaceFailure message={gt("No changed files for this response.")} />
+            )}
+          </div>
         </div>
       </DialogPopup>
     </Dialog>
